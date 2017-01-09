@@ -99,7 +99,7 @@ void AddVertex(shared_ptr<EncryptedArray>& ea, std::vector<NewPlaintextArray>& v
   verticies.push_back(NewPlaintextArray(*ea));
   
   std::vector<long> buffer;
-  // For now convert float (-1.0 to 1.0) to 32bit signed magnitude int.
+  // For now convert float (-1.0 to 1.0) to 16bit signed magnitude int.
   for (int i = 0; i < 4; ++i)
   {
       assert(vec[i] <= 1.0 && vec[i] >= -1.0);
@@ -111,12 +111,13 @@ void AddVertex(shared_ptr<EncryptedArray>& ea, std::vector<NewPlaintextArray>& v
           ival += 0x80000000;
       }
       
-      for (int i = 0; i < 32; ++i)
-      {
-          buffer.push_back(ival & 1);
-          cout << (ival & 1);
-          ival >>= 1;
-      }
+      //for (int i = 0; i < 32; ++i)
+      //{
+          //buffer.push_back(ival & 1);
+          //cout << (ival & 1);
+          //ival >>= 1;
+      //}
+      buffer.push_back(ival);
       cout << "\n";
   }
   cout << "\n";
@@ -124,10 +125,13 @@ void AddVertex(shared_ptr<EncryptedArray>& ea, std::vector<NewPlaintextArray>& v
   buffer.resize(ea->size());
   
   encode(*ea, verticies.back(), buffer);
+  verticies.back().print(cout);
 }
 
 void GetColor(const Vec4& vertex, size_t pixelset_index, Vec4& out)
 {
+  // For now 1 pixelset is 1 pixel using RGBA 32bits each (wasteful).
+  assert(pixelset_index == 0);
   out[0] = vertex[0] * 255;
   out[1] = vertex[1] * 255;
   out[2] = vertex[2] * 255;
@@ -139,7 +143,7 @@ void GetVertex(shared_ptr<EncryptedArray>& ea, NewPlaintextArray& vertex, Vec4& 
   std::vector<long> buffer;
   decode(*ea, buffer, vertex);
  
-  // For now convert 32bit signed magnitude int to float (-1.0 to 1.0).
+  // For now convert 16bit signed magnitude int to float (-1.0 to 1.0).
   for (int i = 0; i < 4; ++i)
   {
       int32_t ival = 0;
@@ -172,7 +176,9 @@ std::vector<Ctxt> ctxt_clearcolor;
 
 int num_verticies;
 int num_triangles;
+int width;
 int width_pixelset;
+int pixelset_size;
 int height;
 
 shared_ptr<PlaintextMatrixBaseInterface> transform;
@@ -211,7 +217,9 @@ State(long m, long p, long r, long d, long L)
   cout << "computing masks and tables for rotation...";
   ea = shared_ptr<EncryptedArray>(new EncryptedArray(context, G));
   cout << "done\n";
-  
+  cout << ea->size() << "\n";
+  cout << ea->getDegree()  << "\n";
+ 
   // A triangle
   cout << "Input triangle\n";
   AddVertex(ea, verticies, {-0.37234,-1.0,0.0,0.0}); // Bottom Left
@@ -241,10 +249,10 @@ State(long m, long p, long r, long d, long L)
   ctxt_clearcolor.push_back(Ctxt(*publicKey));
   ea->encrypt(ctxt_clearcolor[0], *publicKey, clearcolor);
   
-  // For now one ctxt is 1 pixel
-  // pixelset = ea.size() / pixel bit depth / 3
   height = 64;
-  width_pixelset = 64; // 1 pixelsets per ctxt = 64 pixels row.
+  width = 64;
+  pixelset_size = ea.size() / 4;
+  width_pixelset = width / pixelset_size;
   
   for (long i = 0; i < height * width_pixelset; ++i) {
     ctxt_framebuffer.push_back(ctxt_clearcolor[0]);
@@ -271,7 +279,7 @@ void Render(State& state)
     for (int i = 0; i < state.num_triangles; ++i) {
       // Begin Vertex Shader {
       //   mat_mul(*state.ea, state.ctxt_verticies[1], *transform);  // transform the triangles
-      Ctxt vertex_out = state.ctxt_verticies[(i * 4) + 3];
+      Ctxt color_out = state.ctxt_verticies[(i * 4) + 3];
       // } End Vertex Shader
       
         
@@ -282,8 +290,9 @@ void Render(State& state)
           //cout << "PixelSet " << ps << "\n";
           
           // Begin Fragment Shader {
-          Ctxt vertex_in = vertex_out;
-          state.ctxt_framebuffer[ps] = vertex_in;  // blend current pixel with new
+          Ctxt color_in = color_out;
+          
+          state.ctxt_framebuffer[ps] = color_in;  // blend current pixel with new
           // } End Fragment Shader
         }
       }
@@ -311,13 +320,14 @@ void CopyToFramebuffer(State& state, SDL_Renderer *renderer)
         GetVertex(state.ea, pa, pixel_set);
         
         // For each pixel in pixel "copy" to screen
-        for (int _x = 0; _x < state.width_pixelset; ++_x) {
-          const int x = (x_ * state.width_pixelset) + _x;
+        for (int _x = 0; _x < state.pixelset_size; ++_x) {
+          const int x = (x_ * state.pixelset_size) + _x;
           Vec4 color;
           GetColor(pixel_set, _x, color);
           SDL_SetRenderDrawColor(renderer, color[0],
                                            color[1],
                                            color[2], 255);
+            
           SDL_RenderDrawPoint(renderer, x, y);
         }
       }
@@ -346,23 +356,16 @@ void usage(char *prog)
 int main(int argc, char *argv[])
 {
   argmap_t argmap;
-  argmap["m"] = "2047";
-  argmap["p"] = "2";
-  argmap["r"] = "1";
-  argmap["d"] = "1";
-  argmap["L"] = "4";
+  argmap["k"] = "32";
 
   // get parameters from the command line
   if (!parseArgs(argc, argv, argmap)) usage(argv[0]);
 
-  long m = atoi(argmap["m"]);
-  long p = atoi(argmap["p"]);
-  long r = atoi(argmap["r"]);
-  long d = atoi(argmap["d"]);
-  long L = atoi(argmap["L"]);
-
+  long k = atoi(argmap["k"]);
+ 
   setTimersOn();
-  State state(m, p, r, d, L);
+  long m = FindM(k, 4, 3, 2, 16, 4, 771, true);
+  State state(m, 2, 1, 16, 4);
 
   int done;
   SDL_Window *window;
