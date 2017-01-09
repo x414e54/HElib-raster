@@ -132,7 +132,7 @@ std::vector<Ctxt> ctxt_framebuffer;
 std::vector<Ctxt> ctxt_clearcolor;
 
 int num_triangles;
-int width;
+int width_pixelset;
 int height;
 
 State(long m, long p, long r, long d, long L)
