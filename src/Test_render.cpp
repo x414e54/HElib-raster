@@ -30,7 +30,7 @@
 #include "matrix.h"
 
 template<class type> 
-class FragMatrix : public  PlaintextMatrixInterface<type> {
+class TransformMatrix : public  PlaintextMatrixInterface<type> {
 public:
   PA_INJECT(type) 
 
@@ -40,9 +40,9 @@ private:
   vector< vector< RX > > data;
 
 public:
-  ~FragMatrix() { }
+  ~TransformMatrix() { }
 
-  FragMatrix(const EncryptedArray& _ea) : ea(_ea) {
+  TransformMatrix(const EncryptedArray& _ea) : ea(_ea) {
     long n = ea.size();
     long d = ea.getDegree();
 
@@ -77,15 +77,15 @@ public:
 };
 
 PlaintextMatrixBaseInterface *
-buildFragMatrix(const EncryptedArray& ea)
+buildTransformMatrix(const EncryptedArray& ea)
 {
   switch (ea.getContext().alMod.getTag()) {
     case PA_GF2_tag: {
-      return new FragMatrix<PA_GF2>(ea);
+      return new TransformMatrix<PA_GF2>(ea);
     }
 
     case PA_zz_p_tag: {
-      return new FragMatrix<PA_zz_p>(ea);
+      return new TransformMatrix<PA_zz_p>(ea);
     }
 
     default: return 0;
@@ -94,8 +94,11 @@ buildFragMatrix(const EncryptedArray& ea)
 
 typedef float Vec4[4];
 
-void AddVertex(std::vector<long>& buffer, const Vec4& vec)
+void AddVertex(shared_ptr<EncryptedArray>& ea, std::vector<NewPlaintextArray>& verticies, const Vec4& vec)
 {
+  verticies.push_back(NewPlaintextArray(*ea));
+  
+  std::vector<long> buffer;
   // For now convert float (-1.0 to 1.0) to 32bit signed magnitude int.
   for (int i = 0; i < 4; ++i)
   {
@@ -117,6 +120,10 @@ void AddVertex(std::vector<long>& buffer, const Vec4& vec)
       cout << "\n";
   }
   cout << "\n";
+  
+  buffer.resize(ea->size());
+  
+  encode(*ea, verticies.back(), buffer);
 }
 
 struct State
@@ -126,18 +133,18 @@ shared_ptr<FHESecKey> secretKey;
 shared_ptr<FHEPubKey> publicKey;
 shared_ptr<EncryptedArray> ea;
 
-std::vector<NewPlaintextArray> v;
-std::vector<Ctxt> ctxt;
+std::vector<NewPlaintextArray> verticies;
+std::vector<Ctxt> ctxt_verticies;
 
 std::vector<Ctxt> ctxt_framebuffer;
 std::vector<Ctxt> ctxt_clearcolor;
 
+int num_verticies;
 int num_triangles;
 int width_pixelset;
 int height;
 
-shared_ptr<PlaintextMatrixBaseInterface> vert;
-shared_ptr<PlaintextMatrixBaseInterface> frag;
+shared_ptr<PlaintextMatrixBaseInterface> transform;
 
 State(long m, long p, long r, long d, long L)
 : context(m, p, r)
@@ -176,44 +183,42 @@ State(long m, long p, long r, long d, long L)
   
   // A triangle
   cout << "Input triangle\n";
-  v.push_back(NewPlaintextArray(*ea));
-  std::vector<long> triangle;
-  AddVertex(triangle, {-0.37234,-1.0,0.0,0.0}); // Bottom Left
-  AddVertex(triangle, {0.0,1.0,0.0,0.0}); // Top Middle
-  AddVertex(triangle, {1.0,-1.0,0.0,0.0}); // Bottom Right
-  AddVertex(triangle, {1.0,0.0,1.0,1.0}); // Per triangle color -- change to per vertex
-  triangle.resize(ea->size());
-  encode(*ea, v[0], triangle);
+  AddVertex(ea, verticies, {-0.37234,-1.0,0.0,0.0}); // Bottom Left
+  AddVertex(ea, verticies, {0.0,1.0,0.0,0.0}); // Top Middle
+  AddVertex(ea, verticies, {1.0,-1.0,0.0,0.0}); // Bottom Right
+  AddVertex(ea, verticies, {1.0,0.0,1.0,1.0}); // Per triangle color -- change to per vertex
+  num_verticies = 4;
   num_triangles = 1;
   
-  // encrypt the trangle vector
-  ctxt.push_back(Ctxt(*publicKey));
-  ea->encrypt(ctxt[0], *publicKey, v[0]);
+  // encrypt the trangle verticies
+  for (int i = 0; i < num_verticies; ++i) {
+    ctxt_verticies.push_back(Ctxt(*publicKey));
+    ea->encrypt(ctxt_verticies[i], *publicKey, verticies[i]);
+  }
   
-  // test decryption of the trangle vector
-  NewPlaintextArray v1(*ea);
-  ea->decrypt(ctxt[0], *secretKey, v1);
+  // test decryption of the trangle verticies
+  for (int i = 0; i < num_verticies; ++i) {
+    NewPlaintextArray v1(*ea);
+    ea->decrypt(ctxt_verticies[i], *secretKey, v1);
 
-  if (!equals(*ea, v[0], v1)) {
-    cout << "Fail!!\n";
+    if (!equals(*ea, verticies[i], v1)) {
+      cout << "Fail!!\n";
+    }
   }
   
   NewPlaintextArray clearcolor(*ea);
   ctxt_clearcolor.push_back(Ctxt(*publicKey));
   ea->encrypt(ctxt_clearcolor[0], *publicKey, clearcolor);
   
-  height = 16;
-  width_pixelset = 1; // 16 slots per ctxt (pixelset) = 256 pixels row.
+  height = 256;
+  width_pixelset = 64; // 4 pixelsets per ctxt = 256 pixels row.
   
   for (long i = 0; i < height * width_pixelset; ++i) {
     ctxt_framebuffer.push_back(ctxt_clearcolor[0]);
   }
     
   // vertex shader rotate matrix
-  //vert = shared_ptr<PlaintextMatrixBaseInterface>(buildRandomMatrix(*ea));
-    
-  // fragment shader color copy matrix
-  frag = shared_ptr<PlaintextMatrixBaseInterface>(buildFragMatrix(*ea));
+  //transform = shared_ptr<PlaintextMatrixBaseInterface>(buildTransformMatrix(*ea));
 }
 
 };
@@ -232,8 +237,8 @@ void Render(State& state)
     
     for (int i = 0; i < state.num_triangles; ++i) {
       // Begin Vertex Shader {
-      //   mat_mul(*state.ea, state.ctxt[1], *vert);  // transform the triangles
-      Ctxt vertex_out = state.ctxt[i];
+      //   mat_mul(*state.ea, state.ctxt_verticies[1], *transform);  // transform the triangles
+      Ctxt vertex_out = state.ctxt_verticies[(i * 4) + 3];
       // } End Vertex Shader
       
         
@@ -245,7 +250,6 @@ void Render(State& state)
           
           // Begin Fragment Shader {
           Ctxt vertex_in = vertex_out;
-          mat_mul(*state.ea, vertex_in, *state.frag);  // Run color copy matrix
           state.ctxt_framebuffer[ps] += vertex_in;  // blend current pixel with new
           // } End Fragment Shader
         }
@@ -266,8 +270,9 @@ void CopyToFramebuffer(State& state, SDL_Renderer *renderer)
       for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
         // Decrypt framebuffer pixelsets
         NewPlaintextArray pa(*state.ea);
-        const int i = (y * state.width_pixelset) + x_;
-        state.ea->decrypt(state.ctxt_framebuffer[i], *state.secretKey, pa);
+        const int ps = (y * state.width_pixelset) + x_;
+        cout << "PixelSet " << ps << "\n";
+        state.ea->decrypt(state.ctxt_framebuffer[ps], *state.secretKey, pa);
         
         std::vector<long> pixelset;
         decode(*state.ea, pixelset, pa);
@@ -284,7 +289,6 @@ void CopyToFramebuffer(State& state, SDL_Renderer *renderer)
         }
       }
     }
-    SDL_RenderPresent(renderer);
     
     cout << "\nDone\n\n";
 }
@@ -309,7 +313,7 @@ void usage(char *prog)
 int main(int argc, char *argv[])
 {
   argmap_t argmap;
-  argmap["m"] = "8191";
+  argmap["m"] = "2047";
   argmap["p"] = "2";
   argmap["r"] = "1";
   argmap["d"] = "1";
@@ -362,7 +366,14 @@ int main(int argc, char *argv[])
         }
     }
     
-    CopyToFramebuffer(state, renderer);
+    std::future<void> blit = std::async(std::launch::async, [&state, &renderer](){ CopyToFramebuffer(state, renderer); });
+    while (blit.wait_for(timeout) == std::future_status::timeout) {
+        if (SDL_PollEvent(&event) && event.type == SDL_QUIT) {
+            abort(); // Hard quit for now.
+        }
+    }
+    
+    SDL_RenderPresent(renderer);
   }
 
   //SDL_DestroyTexture(texture);
