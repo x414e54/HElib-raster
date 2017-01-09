@@ -221,7 +221,7 @@ void Render(State& state)
       }
     }
     
-    for (int i = 0; i < state.num_triangles; ++y) {
+    for (int i = 0; i < state.num_triangles; ++i) {
       //mat_mul(*state.ea, state.ctxt[1], *ptr);  // rotate the triangles
       
       // For each pixel fill/rasterize triangle
