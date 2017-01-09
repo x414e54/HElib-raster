@@ -126,6 +126,37 @@ void AddVertex(shared_ptr<EncryptedArray>& ea, std::vector<NewPlaintextArray>& v
   encode(*ea, verticies.back(), buffer);
 }
 
+void GetColor(const Vec4& vertex, size_t pixelset_index, Vec4& out)
+{
+  out[0] = vertex[0] * 255;
+  out[1] = vertex[1] * 255;
+  out[2] = vertex[2] * 255;
+  out[3] = vertex[3] * 255;
+}
+
+void GetVertex(shared_ptr<EncryptedArray>& ea, NewPlaintextArray& vertex, Vec4& out)
+{
+  std::vector<long> buffer;
+  decode(*ea, buffer, vertex);
+ 
+  // For now convert 32bit signed magnitude int to float (-1.0 to 1.0).
+  for (int i = 0; i < 4; ++i)
+  {
+      int32_t ival = 0;
+      for (int j = 31; j >= 0; --j)
+      {
+          ival <<= 1;
+          ival += buffer[(i * 32) + j];
+      }
+      
+      out[i] = ival / 0x7FFFFFFF;
+      
+      if (buffer[(i * 4) + 31]) {
+          out[i] *= -1.0;
+      }
+  }
+}
+
 struct State
 {
 FHEcontext context;
@@ -210,8 +241,10 @@ State(long m, long p, long r, long d, long L)
   ctxt_clearcolor.push_back(Ctxt(*publicKey));
   ea->encrypt(ctxt_clearcolor[0], *publicKey, clearcolor);
   
-  height = 256;
-  width_pixelset = 64; // 4 pixelsets per ctxt = 256 pixels row.
+  // For now one ctxt is 1 pixel
+  // pixelset = ea.size() / pixel bit depth / 3
+  height = 64;
+  width_pixelset = 64; // 1 pixelsets per ctxt = 64 pixels row.
   
   for (long i = 0; i < height * width_pixelset; ++i) {
     ctxt_framebuffer.push_back(ctxt_clearcolor[0]);
@@ -246,11 +279,11 @@ void Render(State& state)
       for (int y = 0; y < state.height; ++y) {
         for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
           const int ps = (y * state.width_pixelset) + x_;
-          cout << "PixelSet " << ps << "\n";
+          //cout << "PixelSet " << ps << "\n";
           
           // Begin Fragment Shader {
           Ctxt vertex_in = vertex_out;
-          state.ctxt_framebuffer[ps] += vertex_in;  // blend current pixel with new
+          state.ctxt_framebuffer[ps] = vertex_in;  // blend current pixel with new
           // } End Fragment Shader
         }
       }
@@ -271,20 +304,20 @@ void CopyToFramebuffer(State& state, SDL_Renderer *renderer)
         // Decrypt framebuffer pixelsets
         NewPlaintextArray pa(*state.ea);
         const int ps = (y * state.width_pixelset) + x_;
-        cout << "PixelSet " << ps << "\n";
+        //cout << "PixelSet " << ps << "\n";
         state.ea->decrypt(state.ctxt_framebuffer[ps], *state.secretKey, pa);
+          
+        Vec4 pixel_set;
+        GetVertex(state.ea, pa, pixel_set);
         
-        std::vector<long> pixelset;
-        decode(*state.ea, pixelset, pa);
-    
         // For each pixel in pixel "copy" to screen
         for (int _x = 0; _x < state.width_pixelset; ++_x) {
           const int x = (x_ * state.width_pixelset) + _x;
-          const int color = pixelset[_x];
-          
-          SDL_SetRenderDrawColor(renderer, (color & 0xFF000000) >> 24,
-                                           (color & 0x00FF0000) >> 16,
-                                           (color & 0x0000FF00) >> 8, 255);
+          Vec4 color;
+          GetColor(pixel_set, _x, color);
+          SDL_SetRenderDrawColor(renderer, color[0],
+                                           color[1],
+                                           color[2], 255);
           SDL_RenderDrawPoint(renderer, x, y);
         }
       }
@@ -339,7 +372,7 @@ int main(int argc, char *argv[])
     return -1;
   }
 
-  SDL_CreateWindowAndRenderer(256, 256, 0, &window, &renderer);
+  SDL_CreateWindowAndRenderer(64, 64, 0, &window, &renderer);
   if (window == NULL || renderer == NULL) {
     return -1;
   }
