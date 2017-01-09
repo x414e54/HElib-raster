@@ -28,7 +28,7 @@
 #include "matrix.h"
 
 template<class type> 
-class RandomMatrix : public  PlaintextMatrixInterface<type> {
+class FragMatrix : public  PlaintextMatrixInterface<type> {
 public:
   PA_INJECT(type) 
 
@@ -38,13 +38,11 @@ private:
   vector< vector< RX > > data;
 
 public:
-  ~RandomMatrix() { /*cout << "destructor: random matrix\n";*/ }
+  ~FragMatrix() { }
 
-  RandomMatrix(const EncryptedArray& _ea) : ea(_ea) { 
+  FragMatrix(const EncryptedArray& _ea) : ea(_ea) {
     long n = ea.size();
     long d = ea.getDegree();
-
-    long bnd = 2*n; // non-zero with probability 1/bnd
 
     RBak bak; bak.save(); ea.getContext().alMod.restoreContext();
 
@@ -52,12 +50,13 @@ public:
     for (long i = 0; i < n; i++) {
       data[i].resize(n);
       for (long j = 0; j < n; j++) {
-        bool zEntry = (RandomBnd(bnd) > 0);
+        bool color_row = j == n - 1;
 
-        if (zEntry)
+        if (color_row) {
           clear(data[i][j]);
-        else
-          random(data[i][j], d);
+        } else {
+          data[i][j] = 1;
+        }
       }
     }
   }
@@ -76,15 +75,15 @@ public:
 };
 
 PlaintextMatrixBaseInterface *
-buildRandomMatrix(const EncryptedArray& ea)
+buildFragMatrix(const EncryptedArray& ea)
 {
   switch (ea.getContext().alMod.getTag()) {
     case PA_GF2_tag: {
-      return new RandomMatrix<PA_GF2>(ea);
+      return new FragMatrix<PA_GF2>(ea);
     }
 
     case PA_zz_p_tag: {
-      return new RandomMatrix<PA_zz_p>(ea);
+      return new FragMatrix<PA_zz_p>(ea);
     }
 
     default: return 0;
@@ -121,9 +120,9 @@ void AddVertex(std::vector<long>& buffer, const Vec4& vec)
 struct State
 {
 FHEcontext context;
-FHESecKey *secretKey;
-FHEPubKey *publicKey;
-EncryptedArray *ea;
+shared_ptr<FHESecKey> secretKey;
+shared_ptr<FHEPubKey> publicKey;
+shared_ptr<EncryptedArray> ea;
 
 std::vector<NewPlaintextArray> v;
 std::vector<Ctxt> ctxt;
@@ -134,6 +133,9 @@ std::vector<Ctxt> ctxt_clearcolor;
 int num_triangles;
 int width_pixelset;
 int height;
+
+shared_ptr<PlaintextMatrixBaseInterface> vert;
+shared_ptr<PlaintextMatrixBaseInterface> frag;
 
 State(long m, long p, long r, long d, long L)
 : context(m, p, r)
@@ -150,7 +152,7 @@ State(long m, long p, long r, long d, long L)
   context.zMStar.printout();
   cout << endl;
 
-  secretKey = new FHESecKey(context);
+  secretKey = shared_ptr<FHESecKey>(new FHESecKey(context));
   publicKey = secretKey;
   secretKey->GenSecKey(/*w=*/64); // A Hamming-weight-w secret key
 
@@ -167,7 +169,7 @@ State(long m, long p, long r, long d, long L)
   cout << "done\n";
 
   cout << "computing masks and tables for rotation...";
-  ea = new EncryptedArray(context, G);
+  ea = shared_ptr<EncryptedArray>(new EncryptedArray(context, G));
   cout << "done\n";
   
   // A triangle
@@ -177,7 +179,7 @@ State(long m, long p, long r, long d, long L)
   AddVertex(triangle, {-0.37234,-1.0,0.0,0.0}); // Bottom Left
   AddVertex(triangle, {0.0,1.0,0.0,0.0}); // Top Middle
   AddVertex(triangle, {1.0,-1.0,0.0,0.0}); // Bottom Right
-  AddVertex(triangle, {1.0,0.0,1.0,1.0});
+  AddVertex(triangle, {1.0,0.0,1.0,1.0}); // Per triangle color -- change to per vertex
   triangle.resize(ea->size());
   encode(*ea, v[0], triangle);
   num_triangles = 1;
@@ -204,32 +206,50 @@ State(long m, long p, long r, long d, long L)
   for (long i = 0; i < height * width_pixelset; ++i) {
     ctxt_framebuffer.push_back(ctxt_clearcolor[0]);
   }
+    
+  // vertex shader rotate matrix
+  //vert = shared_ptr<PlaintextMatrixBaseInterface>(buildRandomMatrix(*ea));
+    
+  // fragment shader color copy matrix
+  frag = shared_ptr<PlaintextMatrixBaseInterface>(buildFragMatrix(*ea));
 }
 
 };
 
 void Render(State& state)
 {
-    // plaintext rotation matrix
-    shared_ptr<PlaintextMatrixBaseInterface> ptr(buildRandomMatrix(*state.ea));
+    cout << "Render Scene\n";
 
     // Clear framebuffer
     for (int y = 0; y < state.height; ++y) {
       for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
-        const int i = (y * state.width_pixelset) + x_;
+         const int i = (y * state.width_pixelset) + x_;
          state.ctxt_framebuffer[i] = state.ctxt_clearcolor[0];
       }
     }
     
     for (int i = 0; i < state.num_triangles; ++i) {
-      //mat_mul(*state.ea, state.ctxt[1], *ptr);  // rotate the triangles
+      // Begin Vertex Shader {
+      //   mat_mul(*state.ea, state.ctxt[1], *vert);  // transform the triangles
+      Ctxt vertex_out = state.ctxt[i];
+      // } End Vertex Shader
       
+        
       // For each pixel fill/rasterize triangle
       for (int y = 0; y < state.height; ++y) {
         for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
+          SDL_PumpEvents(); // Prevent spinning wheel
+          
+          const int ps = (y * state.width_pixelset) + x_;
+          // Begin Fragment Shader {
+          mat_mul(*state.ea, vertex_out, *state.frag);  // Run color copy matrix
+          state.ctxt_framebuffer[i] += vertex_out;  // blend current pixel with new
+          // } End Fragment Shader
         }
       }
     }
+    
+    cout << "\nDone\n\n";
 }
 
 void CopyToFramebuffer(State& state, SDL_Renderer *renderer)
@@ -241,7 +261,9 @@ void CopyToFramebuffer(State& state, SDL_Renderer *renderer)
     
     for (int y = 0; y < state.height; ++y) {
       for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
-        // Decrypt framebuffer pixel - currently there are wasted slots
+        SDL_PumpEvents(); // Prevent spinning wheel
+        
+        // Decrypt framebuffer pixelsets
         NewPlaintextArray pa(*state.ea);
         const int i = (y * state.width_pixelset) + x_;
         state.ea->decrypt(state.ctxt_framebuffer[i], *state.secretKey, pa);
@@ -249,6 +271,7 @@ void CopyToFramebuffer(State& state, SDL_Renderer *renderer)
         std::vector<long> pixelset;
         decode(*state.ea, pixelset, pa);
     
+        // For each pixel in pixel "copy" to screen
         for (int _x = 0; _x < state.width_pixelset; ++_x) {
           const int x = (x_ * state.width_pixelset) + _x;
           const int color = pixelset[_x];
