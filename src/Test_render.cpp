@@ -19,6 +19,8 @@
  * base-field/ring.
  */
 
+#include <future>
+#include <thread>
 #include <cassert>
 #include <NTL/lzz_pXFactoring.h>
 #include <SDL2/SDL.h>
@@ -200,8 +202,8 @@ State(long m, long p, long r, long d, long L)
   ctxt_clearcolor.push_back(Ctxt(*publicKey));
   ea->encrypt(ctxt_clearcolor[0], *publicKey, clearcolor);
   
-  height = 256;
-  width_pixelset = 16; // 16 slots per ctxt (pixelset) = 256 pixels row.
+  height = 16;
+  width_pixelset = 1; // 16 slots per ctxt (pixelset) = 256 pixels row.
   
   for (long i = 0; i < height * width_pixelset; ++i) {
     ctxt_framebuffer.push_back(ctxt_clearcolor[0]);
@@ -238,12 +240,13 @@ void Render(State& state)
       // For each pixel fill/rasterize triangle
       for (int y = 0; y < state.height; ++y) {
         for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
-          SDL_PumpEvents(); // Prevent spinning wheel
-          
           const int ps = (y * state.width_pixelset) + x_;
+          cout << "PixelSet " << ps << "\n";
+          
           // Begin Fragment Shader {
-          mat_mul(*state.ea, vertex_out, *state.frag);  // Run color copy matrix
-          state.ctxt_framebuffer[ps] += vertex_out;  // blend current pixel with new
+          Ctxt vertex_in = vertex_out;
+          mat_mul(*state.ea, vertex_in, *state.frag);  // Run color copy matrix
+          state.ctxt_framebuffer[ps] += vertex_in;  // blend current pixel with new
           // } End Fragment Shader
         }
       }
@@ -261,8 +264,6 @@ void CopyToFramebuffer(State& state, SDL_Renderer *renderer)
     
     for (int y = 0; y < state.height; ++y) {
       for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
-        SDL_PumpEvents(); // Prevent spinning wheel
-        
         // Decrypt framebuffer pixelsets
         NewPlaintextArray pa(*state.ea);
         const int i = (y * state.width_pixelset) + x_;
@@ -342,7 +343,7 @@ int main(int argc, char *argv[])
   bool running = true;
   while (running) {
     SDL_Event event;
-    while (SDL_PollEvent(&event)) {
+    if (SDL_PollEvent(&event)) {
       if (event.type == SDL_QUIT) {
          running = false;
       }
@@ -353,8 +354,14 @@ int main(int argc, char *argv[])
       }
     }
     
-    Render(state);
-  
+    std::future<void> render = std::async(std::launch::async, [&state](){ Render(state); });
+    std::chrono::milliseconds timeout(100);
+    while (render.wait_for(timeout) == std::future_status::timeout) {
+        if (SDL_PollEvent(&event) && event.type == SDL_QUIT) {
+            abort(); // Hard quit for now.
+        }
+    }
+    
     CopyToFramebuffer(state, renderer);
   }
 
