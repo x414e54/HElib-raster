@@ -131,7 +131,6 @@ void AddVertex(shared_ptr<EncryptedArray>& ea, std::vector<NewPlaintextArray>& v
 void GetColor(const Vec4& vertex, size_t pixelset_index, Vec4& out)
 {
   // For now 1 pixelset is 1 pixel using RGBA 32bits each (wasteful).
-  assert(pixelset_index == 0);
   out[0] = vertex[0] * 255;
   out[1] = vertex[1] * 255;
   out[2] = vertex[2] * 255;
@@ -251,7 +250,7 @@ State(long m, long p, long r, long d, long L)
   
   height = 64;
   width = 64;
-  pixelset_size = ea.size() / 4;
+  pixelset_size = ea->size() / 4;
   width_pixelset = width / pixelset_size;
   
   for (long i = 0; i < height * width_pixelset; ++i) {
