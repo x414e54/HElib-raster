@@ -223,8 +223,8 @@ void Render(State& state)
     // Clear framebuffer
     for (int y = 0; y < state.height; ++y) {
       for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
-         const int i = (y * state.width_pixelset) + x_;
-         state.ctxt_framebuffer[i] = state.ctxt_clearcolor[0];
+         const int ps = (y * state.width_pixelset) + x_;
+         state.ctxt_framebuffer[ps] = state.ctxt_clearcolor[0];
       }
     }
     
@@ -243,7 +243,7 @@ void Render(State& state)
           const int ps = (y * state.width_pixelset) + x_;
           // Begin Fragment Shader {
           mat_mul(*state.ea, vertex_out, *state.frag);  // Run color copy matrix
-          state.ctxt_framebuffer[i] += vertex_out;  // blend current pixel with new
+          state.ctxt_framebuffer[ps] += vertex_out;  // blend current pixel with new
           // } End Fragment Shader
         }
       }
