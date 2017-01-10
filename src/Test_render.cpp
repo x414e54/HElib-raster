@@ -105,6 +105,7 @@ struct EncodeState
   EncodeState(shared_ptr<EncryptedArray> ea, Vec<ZZX>& v)
   : ea(ea), v(v), slot(0), index(0) {
         assert(ea->size() >= 4);
+        assert(ea->size() % 4 == 0);
         slots = std::vector<GF2X>(ea->size(), GF2X::zero());
   }
 
@@ -114,6 +115,7 @@ struct EncodeState
     
     if (slot + 4 >= ea2.size()) {
         slot = 0;
+        ea2.encode(v[index], slots);
         slots = std::vector<GF2X>(ea2.size(), GF2X::zero());
         ++index;
     }
@@ -123,17 +125,15 @@ struct EncodeState
     {
         assert(vec[i] <= 1.0 && vec[i] >= -1.0);
         float fval = vec[i];
-        int32_t ival = 0;
-        double fval_range = abs(fval) * (double)0x7FFFFFFF;
+        int16_t ival = 0;
+        double fval_range = abs(fval) * (double)0x7FFF;
         ival = round(fval_range);
         if (fval < 0.0) {
-            ival += 0x80000000;
+            ival += 0x8000;
         }
       
-        GF2XFromBytes(slots[slot++], (const unsigned char*)&ival, 4);
+        GF2XFromBytes(slots[slot++], (const unsigned char*)&ival, 2);
     }
-  
-    ea2.encode(v[index], slots);
   }
 };
 
@@ -156,17 +156,17 @@ void DecodeVector(shared_ptr<EncryptedArray>& ea, ZZX& encoded, int index, Vec4&
   // Convert 16bit signed magnitude int to float (-1.0 to 1.0).
   for (int i = 0; i < 4; ++i)
   {
-      int32_t ival = 0;
-      BytesFromGF2X((unsigned char*)&ival, slots[(index * 4) + i], 4);
+      int16_t ival = 0;
+      BytesFromGF2X((unsigned char*)&ival, slots[(index * 4) + i], 2);
       
       if (ival & 31) {
-          ival -= 0x80000000;
+          ival -= 0x8000;
           out[i] = -1.0;
       } else {
           out[i] = 1.0;
       }
       
-      out[i] *= ival / 0x7FFFFFFF;
+      out[i] *= ival / 0x7FFF;
       
   }
 }
@@ -237,7 +237,7 @@ State(long m, long p, long r, long d, long L)
   triangle_stride = 4;
   num_triangles = 1;
   
-  vertexdata.SetLength(1);
+  vertexdata.SetLength(1); // Calculate this
   
   {
     EncodeState tmp(ea, vertexdata);
@@ -247,19 +247,25 @@ State(long m, long p, long r, long d, long L)
     tmp.EncodeVector({1.0,0.0,1.0,1.0}); // Per triangle color -- change to per vertex
   
     // encrypt the trangle verticies
-    for (int i = 0; i < tmp.index; ++i) {
+    for (int i = 0; i < vertexdata.length(); ++i) {
       ctxt_vertexdata.push_back(Ctxt(*publicKey));
       publicKey->Encrypt(ctxt_vertexdata[i], vertexdata[i]);
     }
    
     // test decryption of the trangle verticies
     for (int i = 0; i < vertexdata.length(); ++i) {
-      ZZX v1;//(*ea);
+      ZZX v1;
       secretKey->Decrypt(v1, ctxt_vertexdata[i]);
 
-      /*if (!equals(*ea, vertexdata[i], v1)) {
-        cout << "Fail!!\n";
-      }*/
+      for (int i = 0; i < ea->size() / 4; ++i) {
+          Vec4 a;
+          Vec4 b;
+          DecodeVector(ea, v1, i, a);
+          DecodeVector(ea, vertexdata[i], i, a);
+          if (memcmp(a, b, sizeof(Vec4)) != 0) {
+             cout << "Fail!!\n";
+          }
+      }
     }
   }
   

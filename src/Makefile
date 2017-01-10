@@ -16,7 +16,7 @@
 CC = g++
 #
 #CFLAGS = -g -O2 -Wfatal-errors -Wshadow -Wall -I/usr/local/include 
-CFLAGS = -g -O2 -std=c++11 -pthread -DFHE_THREADS -DFHE_DCRT_THREADS -DFHE_BOOT_THREADS -I/usr/local/include 
+CFLAGS = -g3 -O0 -std=c++11 -pthread -DFHE_THREADS -DFHE_DCRT_THREADS -DFHE_BOOT_THREADS -I/usr/local/include 
 #CFLAGS = -g -O2 -std=c++11 -pthread
 #CFLAGS = -g -O2 -std=c++11 
 
