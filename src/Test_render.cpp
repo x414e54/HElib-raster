@@ -94,69 +94,80 @@ buildTransformMatrix(const EncryptedArray& ea)
 
 typedef float Vec4[4];
 
-void AddVertex(shared_ptr<EncryptedArray>& ea, std::vector<NewPlaintextArray>& verticies, const Vec4& vec)
+struct EncodeState
 {
-  verticies.push_back(NewPlaintextArray(*ea));
+  Vec<ZZX>& v;
+  shared_ptr<EncryptedArray> ea;
+  std::vector<GF2X> slots;
+  int slot;
+  int index;
   
-  std::vector<long> buffer;
-  // For now convert float (-1.0 to 1.0) to 16bit signed magnitude int.
-  for (int i = 0; i < 4; ++i)
-  {
-      assert(vec[i] <= 1.0 && vec[i] >= -1.0);
-      float fval = vec[i];
-      int32_t ival = 0;
-      double fval_range = abs(fval) * (double)0x7FFFFFFF;
-      ival = round(fval_range);
-      if (fval < 0.0) {
-          ival += 0x80000000;
-      }
-      
-      //for (int i = 0; i < 32; ++i)
-      //{
-          //buffer.push_back(ival & 1);
-          //cout << (ival & 1);
-          //ival >>= 1;
-      //}
-      buffer.push_back(ival);
-      cout << "\n";
+  EncodeState(shared_ptr<EncryptedArray> ea, Vec<ZZX>& v)
+  : ea(ea), v(v), slot(0), index(0) {
+        assert(ea->size() >= 4);
+        slots = std::vector<GF2X>(ea->size(), GF2X::zero());
   }
-  cout << "\n";
-  
-  buffer.resize(ea->size());
-  
-  encode(*ea, verticies.back(), buffer);
-  verticies.back().print(cout);
-}
 
-void GetColor(const Vec4& vertex, size_t pixelset_index, Vec4& out)
+  void EncodeVector(const Vec4& vec)
+  {
+    const EncryptedArrayDerived<PA_GF2>& ea2 = ea->getDerived(PA_GF2());
+    
+    if (slot + 4 >= ea2.size()) {
+        slot = 0;
+        slots = std::vector<GF2X>(ea2.size(), GF2X::zero());
+        ++index;
+    }
+  
+    // Convert float (-1.0 to 1.0) to 16bit signed magnitude int.
+    for (int i = 0; i < 4; ++i)
+    {
+        assert(vec[i] <= 1.0 && vec[i] >= -1.0);
+        float fval = vec[i];
+        int32_t ival = 0;
+        double fval_range = abs(fval) * (double)0x7FFFFFFF;
+        ival = round(fval_range);
+        if (fval < 0.0) {
+            ival += 0x80000000;
+        }
+      
+        GF2XFromBytes(slots[slot++], (const unsigned char*)&ival, 4);
+    }
+  
+    ea2.encode(v[index], slots);
+  }
+};
+
+
+void GetColor(const Vec4& vertex, Vec4& out)
 {
-  // For now 1 pixelset is 1 pixel using RGBA 32bits each (wasteful).
   out[0] = vertex[0] * 255;
   out[1] = vertex[1] * 255;
   out[2] = vertex[2] * 255;
   out[3] = vertex[3] * 255;
 }
 
-void GetVertex(shared_ptr<EncryptedArray>& ea, NewPlaintextArray& vertex, Vec4& out)
+void DecodeVector(shared_ptr<EncryptedArray>& ea, ZZX& encoded, int index, Vec4& out)
 {
-  std::vector<long> buffer;
-  decode(*ea, buffer, vertex);
+  const EncryptedArrayDerived<PA_GF2>& ea2 = ea->getDerived(PA_GF2());
+  
+  std::vector<GF2X> slots;
+  ea2.decode(slots, encoded);
  
-  // For now convert 16bit signed magnitude int to float (-1.0 to 1.0).
+  // Convert 16bit signed magnitude int to float (-1.0 to 1.0).
   for (int i = 0; i < 4; ++i)
   {
       int32_t ival = 0;
-      for (int j = 31; j >= 0; --j)
-      {
-          ival <<= 1;
-          ival += buffer[(i * 32) + j];
+      BytesFromGF2X((unsigned char*)&ival, slots[(index * 4) + i], 4);
+      
+      if (ival & 31) {
+          ival -= 0x80000000;
+          out[i] = -1.0;
+      } else {
+          out[i] = 1.0;
       }
       
-      out[i] = ival / 0x7FFFFFFF;
+      out[i] *= ival / 0x7FFFFFFF;
       
-      if (buffer[(i * 4) + 31]) {
-          out[i] *= -1.0;
-      }
   }
 }
 
@@ -167,13 +178,14 @@ shared_ptr<FHESecKey> secretKey;
 shared_ptr<FHEPubKey> publicKey;
 shared_ptr<EncryptedArray> ea;
 
-std::vector<NewPlaintextArray> verticies;
-std::vector<Ctxt> ctxt_verticies;
+Vec<ZZX> vertexdata;
+std::vector<Ctxt> ctxt_vertexdata;
 
 std::vector<Ctxt> ctxt_framebuffer;
 std::vector<Ctxt> ctxt_clearcolor;
 
-int num_verticies;
+int vertex_stride;
+int triangle_stride;
 int num_triangles;
 int width;
 int width_pixelset;
@@ -221,32 +233,43 @@ State(long m, long p, long r, long d, long L)
  
   // A triangle
   cout << "Input triangle\n";
-  AddVertex(ea, verticies, {-0.37234,-1.0,0.0,0.0}); // Bottom Left
-  AddVertex(ea, verticies, {0.0,1.0,0.0,0.0}); // Top Middle
-  AddVertex(ea, verticies, {1.0,-1.0,0.0,0.0}); // Bottom Right
-  AddVertex(ea, verticies, {1.0,0.0,1.0,1.0}); // Per triangle color -- change to per vertex
-  num_verticies = 4;
+  vertex_stride = 4;
+  triangle_stride = 4;
   num_triangles = 1;
   
-  // encrypt the trangle verticies
-  for (int i = 0; i < num_verticies; ++i) {
-    ctxt_verticies.push_back(Ctxt(*publicKey));
-    ea->encrypt(ctxt_verticies[i], *publicKey, verticies[i]);
-  }
+  vertexdata.SetLength(1);
   
-  // test decryption of the trangle verticies
-  for (int i = 0; i < num_verticies; ++i) {
-    NewPlaintextArray v1(*ea);
-    ea->decrypt(ctxt_verticies[i], *secretKey, v1);
+  {
+    EncodeState tmp(ea, vertexdata);
+    tmp.EncodeVector({-0.37234,-1.0,0.0,0.0}); // Bottom Left
+    tmp.EncodeVector({0.0,1.0,0.0,0.0}); // Top Middle
+    tmp.EncodeVector({1.0,-1.0,0.0,0.0}); // Bottom Right
+    tmp.EncodeVector({1.0,0.0,1.0,1.0}); // Per triangle color -- change to per vertex
+  
+    // encrypt the trangle verticies
+    for (int i = 0; i < tmp.index; ++i) {
+      ctxt_vertexdata.push_back(Ctxt(*publicKey));
+      publicKey->Encrypt(ctxt_vertexdata[i], vertexdata[i]);
+    }
+   
+    // test decryption of the trangle verticies
+    for (int i = 0; i < vertexdata.length(); ++i) {
+      ZZX v1;//(*ea);
+      secretKey->Decrypt(v1, ctxt_vertexdata[i]);
 
-    if (!equals(*ea, verticies[i], v1)) {
-      cout << "Fail!!\n";
+      /*if (!equals(*ea, vertexdata[i], v1)) {
+        cout << "Fail!!\n";
+      }*/
     }
   }
   
-  NewPlaintextArray clearcolor(*ea);
+  // Constants just clear color for now
+  cout << "Input Constants\n";
+  Vec<ZZX> constants;
+  EncodeState tmp(ea, constants);
+  tmp.EncodeVector({0.0,0.0,0.0,1.0});
   ctxt_clearcolor.push_back(Ctxt(*publicKey));
-  ea->encrypt(ctxt_clearcolor[0], *publicKey, clearcolor);
+  publicKey->Encrypt(ctxt_clearcolor[0], constants[0]);
   
   height = 64;
   width = 64;
@@ -275,10 +298,10 @@ void Render(State& state)
       }
     }
     
-    for (int i = 0; i < state.num_triangles; ++i) {
+    /*for (int i = 0; i < state.num_triangles; ++i) {
       // Begin Vertex Shader {
-      //   mat_mul(*state.ea, state.ctxt_verticies[1], *transform);  // transform the triangles
-      Ctxt color_out = state.ctxt_verticies[(i * 4) + 3];
+      //   mat_mul(*state.ea, state.ctxt_vertexdata[1], *transform);  // transform the triangles
+      Ctxt color_out = state.ctxt_vertexdata[(i * 4) + 3];
       // } End Vertex Shader
       
         
@@ -295,7 +318,7 @@ void Render(State& state)
           // } End Fragment Shader
         }
       }
-    }
+    }*/
     
     cout << "\nDone\n\n";
 }
@@ -310,19 +333,19 @@ void CopyToFramebuffer(State& state, SDL_Renderer *renderer)
     for (int y = 0; y < state.height; ++y) {
       for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
         // Decrypt framebuffer pixelsets
-        NewPlaintextArray pa(*state.ea);
+        ZZX pixelset;
         const int ps = (y * state.width_pixelset) + x_;
         //cout << "PixelSet " << ps << "\n";
-        state.ea->decrypt(state.ctxt_framebuffer[ps], *state.secretKey, pa);
+        state.secretKey->Decrypt(pixelset, state.ctxt_framebuffer[ps]);
           
-        Vec4 pixel_set;
-        GetVertex(state.ea, pa, pixel_set);
-        
         // For each pixel in pixel "copy" to screen
         for (int _x = 0; _x < state.pixelset_size; ++_x) {
           const int x = (x_ * state.pixelset_size) + _x;
+          
           Vec4 color;
-          GetColor(pixel_set, _x, color);
+          DecodeVector(state.ea, pixelset, _x, color);
+          GetColor(color, color);
+          
           SDL_SetRenderDrawColor(renderer, color[0],
                                            color[1],
                                            color[2], 255);
