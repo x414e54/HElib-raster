@@ -132,14 +132,18 @@ struct EncodeState
         if (fval < 0.0) {
             ival += 0x8000;
         }
-      
         GF2XFromBytes(slots[slot++], (const unsigned char*)&ival, 2);
 #if 1
         int16_t dbg_ival = 0;
+        cout << ival << "==";
+        cout << dbg_ival << ",";
         BytesFromGF2X((unsigned char*)&dbg_ival, slots[slot - 1], 2);
         assert(dbg_ival == ival);
 #endif
     }
+#if 1
+    cout << "\n";
+#endif
   }
 };
 
@@ -166,6 +170,8 @@ void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& o
         int16_t ival = 0;
         BytesFromGF2X((unsigned char*)&ival, slots[(j * 4) + i], 2);
       
+        cout << ival << "\n";
+        
         if (ival & 31) {
             ival -= 0x8000;
             tmp[i] = -1.0;
@@ -174,8 +180,14 @@ void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& o
         }
       
         tmp[i] *= ival / 0x7FFF;
-        out.push_back({0.0, 0.0, 0.0, 0.0});
+#if 1
+        cout << ival << ",";
+#endif
+        out.push_back(tmp);
     }
+#if 1
+        cout << "\n";
+#endif
   }
 }
 
