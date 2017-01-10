@@ -114,9 +114,8 @@ struct EncodeState
   {
     const EncryptedArrayDerived<PA_GF2>& ea2 = ea->getDerived(PA_GF2());
     
-    if (slot + 4 >= ea2.size()) {
+    if (slot + 4 > 4) { /// Need to interleave verticies
         slot = 0;
-        ea2.encode(v[index], slots);
         slots = std::vector<GF2X>(ea2.size(), GF2X::zero());
         ++index;
     }
@@ -146,6 +145,9 @@ struct EncodeState
         assert(dbg_ival == ival);
 #endif
     }
+    
+    ea2.encode(v[index], slots);
+      
 #if 1
     cout << "}\n";
 #endif
@@ -180,13 +182,13 @@ void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& o
         BytesFromGF2X((unsigned char*)&ival, slots[(j * 4) + i], 2);
         
         if (ival & 31) {
-            ival -= 0x8000;
+            //ival -= 0x8000;
             tmp[i] = -1.0;
         } else {
             tmp[i] = 1.0;
         }
       
-        tmp[i] *= ival / 0x7FFF;
+        tmp[i] *= (float)ival / (float)0x7FFF;
 #if 1
         cout << tmp[i] << "<-";
         cout << ival << ",";
@@ -265,14 +267,19 @@ State(long m, long p, long r, long d, long L)
   triangle_stride = 4;
   num_triangles = 1;
   
-  vertexdata.SetLength(1); // Calculate this
+  vertexdata.SetLength(4); // Calculate this
   
   {
+    // Idea verticies should be interleaved A0...A7 (slots), B0...B7 (slots) etc.
     EncodeState tmp(ea, vertexdata);
     tmp.EncodeVector({-0.37234,-1.0,0.0,0.0}); // Bottom Left
+    // Interleave all bottom lefts
     tmp.EncodeVector({0.0,1.0,0.0,0.0}); // Top Middle
+    // Interleave all top middle
     tmp.EncodeVector({1.0,-1.0,0.0,0.0}); // Bottom Right
+    // Interleave all bottom rights
     tmp.EncodeVector({1.0,0.0,1.0,1.0}); // Per triangle color -- change to per vertex
+    // Interleave all Colors
   
     // encrypt the trangle verticies
     for (int i = 0; i < vertexdata.length(); ++i) {
@@ -334,7 +341,7 @@ void Render(State& state)
       }
     }
     
-    /*for (int i = 0; i < state.num_triangles; ++i) {
+    for (int i = 0; i < state.num_triangles; ++i) {
       // Begin Vertex Shader {
       //   mat_mul(*state.ea, state.ctxt_vertexdata[1], *transform);  // transform the triangles
       Ctxt color_out = state.ctxt_vertexdata[(i * 4) + 3];
@@ -354,7 +361,7 @@ void Render(State& state)
           // } End Fragment Shader
         }
       }
-    }*/
+    }
     
     cout << "\nDone\n\n";
 }
