@@ -114,7 +114,7 @@ struct EncodeState
   {
     const EncryptedArrayDerived<PA_GF2>& ea2 = ea->getDerived(PA_GF2());
     
-    if (slot + 4 > 4) { /// Need to interleave verticies
+    if (slot > 0) { /// Need to interleave verticies
         slot = 0;
         slots = std::vector<GF2X>(ea2.size(), GF2X::zero());
         ++index;
@@ -122,6 +122,7 @@ struct EncodeState
 
 #if 1
     cout << "{";
+    std::array<int16_t, 4> dbg_ivals;
 #endif
 
     // Convert float (-1.0 to 1.0) to 16bit signed magnitude int.
@@ -143,6 +144,7 @@ struct EncodeState
         BytesFromGF2X((unsigned char*)&dbg_ival, slots[slot - 1], 2);
         cout << dbg_ival << ",";
         assert(dbg_ival == ival);
+        dbg_ivals[i] = dbg_ival;
 #endif
     }
     
@@ -150,6 +152,19 @@ struct EncodeState
       
 #if 1
     cout << "}\n";
+    
+    std::vector<GF2X> tmp;
+    ea2.decode(tmp, v[index]);
+    
+    for (int i = 0; i < 4; ++i)
+    {
+        int16_t dbg_ival = 0;
+        BytesFromGF2X((unsigned char*)&dbg_ival, tmp[i], 2);
+        assert(dbg_ival == dbg_ivals[i]);
+        cout << dbg_ival << "=";
+        cout << dbg_ivals[i] << ",";
+    }
+    cout << "\n";
 #endif
   }
 };
@@ -181,17 +196,20 @@ void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& o
         int16_t ival = 0;
         BytesFromGF2X((unsigned char*)&ival, slots[(j * 4) + i], 2);
         
-        if (ival & 31) {
-            //ival -= 0x8000;
+#if 1
+        cout << ival << ",";
+#endif
+
+        if (ival & 0x8000) {
+            ival -= 0x8000;
             tmp[i] = -1.0;
         } else {
             tmp[i] = 1.0;
         }
       
-        tmp[i] *= (float)ival / (float)0x7FFF;
+        tmp[i] = (float)ival / (float)0x7FFF;
 #if 1
-        cout << tmp[i] << "<-";
-        cout << ival << ",";
+        cout << tmp[i] << "->";
 #endif
         out.push_back(tmp);
     }
@@ -299,7 +317,8 @@ State(long m, long p, long r, long d, long L)
       assert(a.size() == b.size());
       for (int j = 0; j < a.size(); ++j) {
           if (a[j] != b[j]) {
-             cout << "Fail!!\n";
+             cout << j << " - Fail!!\n";
+             abort();
           }
       }
     }
