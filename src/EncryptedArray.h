@@ -19,7 +19,7 @@
  * @file EncryptedArray.h
  * @brief Data-movement operations on encrypted arrays of slots
  */
-rotat
+
 #include <NTL/Lazy.h>
 #include <NTL/pair.h>
 #include <NTL/SmartPtr.h>
