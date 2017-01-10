@@ -435,14 +435,8 @@ void CopyToFramebuffer(State& state, SDL_Renderer *renderer)
         for (int _x = 0; _x < state.pixelset_size; ++_x) {
           const int x = (x_ * state.pixelset_size) + _x;
           
-          cout << _x << "-";
-          
           Vec4 color;
           GetColor(vectors[_x], color);
-          
-          cout << color[0] << "," << color[1] << "," << color[2];
-          
-          cout << "\n";
           
           SDL_SetRenderDrawColor(renderer, color[0],
                                            color[1],
