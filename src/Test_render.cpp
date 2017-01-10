@@ -301,6 +301,7 @@ State(long m, long p, long r, long d, long L)
   // Constants just clear color for now
   cout << "Input Constants\n";
   Vec<ZZX> constants;
+  constants.SetLength(1);
   EncodeState tmp(ea, constants);
   tmp.EncodeVector({0.0,0.0,0.0,1.0});
   ctxt_clearcolor.push_back(Ctxt(*publicKey));
