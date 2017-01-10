@@ -177,15 +177,14 @@ void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& o
   
   out.clear();
  
-  for (int j = 0; j < ea2.size() / 4; ++j) {
+  for (int j = 0; j < 8; ++j) {
 #if DEBUG_ENCODE
         cout << "{";
 #endif
 
-    // Convert 16bit signed magnitude int to float (-1.0 to 1.0).
+    Vec4 tmp;
     for (int i = 0; i < 4; ++i)
     {
-        Vec4 tmp;
         int16_t ival = 0;
         BytesFromGF2X((unsigned char*)&ival, slots[(j * 4) + i], 2);
         
@@ -194,8 +193,9 @@ void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& o
 #endif
         tmp[i] = ival;
         
-        out.push_back(tmp);
     }
+    out.push_back(tmp);
+    
 #if DEBUG_ENCODE
         cout << "}\n";
 #endif
