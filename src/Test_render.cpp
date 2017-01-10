@@ -278,11 +278,11 @@ State(long m, long p, long r, long d, long L)
   {
     // Idea verticies should be interleaved A0...A7 (slots), B0...B7 (slots) etc.
     EncodeState tmp(ea, vertexdata);
-    tmp.EncodeVector({-256,256,0,0}); // Bottom Left
+    tmp.EncodeVector({0,0,0,0}); // Bottom Left
     tmp.FinishSlots(); // Interleave all bottom lefts
-    tmp.EncodeVector({13,2,0,0}); // Top Middle
+    tmp.EncodeVector({256,256,0,0}); // Top Middle
     tmp.FinishSlots(); // Interleave all top middle
-    tmp.EncodeVector({32767,-32767,0,0}); // Bottom Right
+    tmp.EncodeVector({512,0,0,0}); // Bottom Right
     tmp.FinishSlots(); // Interleave all bottom rights
     tmp.EncodeVector({32767,0,32767,32767}); // Per triangle color -- change to per vertex
     tmp.FinishSlots(); // Interleave all Colors
