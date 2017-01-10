@@ -110,14 +110,19 @@ struct EncodeState
         slots = std::vector<GF2X>(ea->size(), GF2X::zero());
   }
 
+  void FinishSlots()
+  {
+    slot = 0;
+    slots = std::vector<GF2X>(ea2.size(), GF2X::zero());
+    ++index;
+  }
+  
   void EncodeVector(const Vec4& vec)
   {
     const EncryptedArrayDerived<PA_GF2>& ea2 = ea->getDerived(PA_GF2());
     
-    if (slot > 0) { /// Need to interleave verticies
-        slot = 0;
-        slots = std::vector<GF2X>(ea2.size(), GF2X::zero());
-        ++index;
+    if (slot + 4 >= ea2.size) {
+        FinishSlots();
     }
 
 #if DEBUG_ENCODE
@@ -273,14 +278,14 @@ State(long m, long p, long r, long d, long L)
   {
     // Idea verticies should be interleaved A0...A7 (slots), B0...B7 (slots) etc.
     EncodeState tmp(ea, vertexdata);
-    tmp.EncodeVector({-32767,-32767,0,0}); // Bottom Left
-    // Interleave all bottom lefts
-    tmp.EncodeVector({0,32767,0,0}); // Top Middle
-    // Interleave all top middle
+    tmp.EncodeVector({-256,256,0,0}); // Bottom Left
+    tmp.FinishSlots(); // Interleave all bottom lefts
+    tmp.EncodeVector({13,2,0,0}); // Top Middle
+    tmp.FinishSlots(); // Interleave all top middle
     tmp.EncodeVector({32767,-32767,0,0}); // Bottom Right
-    // Interleave all bottom rights
+    tmp.FinishSlots(); // Interleave all bottom rights
     tmp.EncodeVector({32767,0,32767,32767}); // Per triangle color -- change to per vertex
-    // Interleave all Colors
+    tmp.FinishSlots(); // Interleave all Colors
   
     // encrypt the trangle verticies
     for (int i = 0; i < vertexdata.length(); ++i) {
@@ -316,9 +321,9 @@ State(long m, long p, long r, long d, long L)
   Vec<ZZX> constants;
   constants.SetLength(1);
   EncodeState tmp(ea, constants);
-  //for (int i = 0; i < pixelset_size) {
+  for (int i = 0; i < pixelset_size) {
     tmp.EncodeVector({0,0,0,32767});
-  //}
+  }
   ctxt_clearcolor.push_back(Ctxt(*publicKey));
   publicKey->Encrypt(ctxt_clearcolor[0], constants[0]);
   
@@ -331,6 +336,18 @@ State(long m, long p, long r, long d, long L)
 }
 
 };
+
+Ctxt DiscardPoint(Ctxt p, Ctxt ba, Ctxt cb, Ctxt, ac)
+{
+      /*Ctxt p2 = p; // p
+      p -= tmp; // p.X - a.x, p.y - a.y, p.z - a.z;
+      //swizzle;
+      //
+      state.ea->rotate(p2, long k);
+      
+      tmp = p1;
+      tmp *= p2; // (b.x - a.x) * (p.y - a.y), (b.y - a.y) * (p.x - a.x)...*/
+}
 
 void Render(State& state)
 {
@@ -347,20 +364,47 @@ void Render(State& state)
     for (int i = 0; i < state.num_triangles; ++i) {
       // Begin Vertex Shader {
       //   mat_mul(*state.ea, state.ctxt_vertexdata[1], *transform);  // transform the triangles
+
       Ctxt color_out = state.ctxt_vertexdata[(i * 4) + 3];
       // } End Vertex Shader
       
-        
+      Ctxt a = state.ctxt_vertexdata[(i * 4) + 0];
+      Ctxt b = state.ctxt_vertexdata[(i * 4) + 0];
+      Ctxt c = state.ctxt_vertexdata[(i * 4) + 0];
+      
+      // (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
+      //      p1            p2            p1            p2
+      
+      // a-b, b-c, c-a
+      
+      Ctxt ba = b; // b
+      ba -= a; // b.x - a.x, b.y - a.y, b.z - a.z;
+      Ctxt cb = c; // b
+      cb -= b; // c.x - b.x, c.y - b.y, c.z - b.z;
+      Ctxt ac = a; // b
+      ac -= c; // a.x - c.x, a.y - c.y, a.z - c.z;
+      
       // For each pixel fill/rasterize triangle
       for (int y = 0; y < state.height; ++y) {
         for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
+          // Needs to be more efficient
+          vector<ZZX> points;
+          EncodeState tmp(ea, points);
+          for (int _x = 0; _x < state.pixelset_size) {
+              tmp.EncodeVector({(x_ * state.pixelset_size) + _x, y, 0, 0});
+          }
+          Ctxt p = Ctxt(*state.publicKey);
+          publicKey->Encrypt(p, points[0]);
+          //
+          
+          Ctxt discard = DiscardPoint(p, ba, cb, ac);
+        
           const int ps = (y * state.width_pixelset) + x_;
           //cout << "PixelSet " << ps << "\n";
           
+          Ctxt color_in = color_out * discard;
           // Begin Fragment Shader {
-          Ctxt color_in = color_out;
-          
-          state.ctxt_framebuffer[ps] = color_in;  // blend current pixel with new
+          state.ctxt_framebuffer[ps] += color_in;  // blend current pixel with new
           // } End Fragment Shader
         }
       }
