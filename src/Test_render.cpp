@@ -93,8 +93,8 @@ buildTransformMatrix(const EncryptedArray& ea)
   }
 }
 
-typedef std::array<float, 4> Vec4;
-
+typedef std::array<int16_t, 4> Vec4;
+#define DEBUG_ENCODE 1
 struct EncodeState
 {
   Vec<ZZX>& v;
@@ -120,26 +120,17 @@ struct EncodeState
         ++index;
     }
 
-#if 1
+#if DEBUG_ENCODE
     cout << "{";
     std::array<int16_t, 4> dbg_ivals;
 #endif
 
-    // Convert float (-1.0 to 1.0) to 16bit signed magnitude int.
     for (int i = 0; i < 4; ++i)
     {
-        assert(vec[i] <= 1.0 && vec[i] >= -1.0);
-        float fval = vec[i];
-        int16_t ival = 0;
-        double fval_range = abs(fval) * (double)0x7FFF;
-        ival = round(fval_range);
-        if (fval < 0.0) {
-            ival += 0x8000;
-        }
+        int16_t ival = vec[i];
         GF2XFromBytes(slots[slot++], (const unsigned char*)&ival, 2);
-#if 1
+#if DEBUG_ENCODE
         int16_t dbg_ival = 0;
-        cout << fval << "->";
         cout << ival << "=";
         BytesFromGF2X((unsigned char*)&dbg_ival, slots[slot - 1], 2);
         cout << dbg_ival << ",";
@@ -150,7 +141,7 @@ struct EncodeState
     
     ea2.encode(v[index], slots);
       
-#if 1
+#if DEBUG_ENCODE
     cout << "}\n";
     
     std::vector<GF2X> tmp;
@@ -171,10 +162,10 @@ struct EncodeState
 
 void GetColor(const Vec4& vertex, Vec4& out)
 {
-  out[0] = vertex[0] * 255;
-  out[1] = vertex[1] * 255;
-  out[2] = vertex[2] * 255;
-  out[3] = vertex[3] * 255;
+  out[0] = round(vertex[0] / 255);
+  out[1] = round(vertex[1] / 255);
+  out[2] = round(vertex[2] / 255);
+  out[3] = round(vertex[3] / 255);
 }
 
 void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& out)
@@ -183,9 +174,11 @@ void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& o
   
   std::vector<GF2X> slots;
   ea2.decode(slots, encoded);
+  
+  out.clear();
  
   for (int j = 0; j < ea2.size() / 4; ++j) {
-#if 1
+#if DEBUG_ENCODE
         cout << "{";
 #endif
 
@@ -196,24 +189,14 @@ void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& o
         int16_t ival = 0;
         BytesFromGF2X((unsigned char*)&ival, slots[(j * 4) + i], 2);
         
-#if 1
+#if DEBUG_ENCODE
         cout << ival << ",";
 #endif
-
-        if (ival & 0x8000) {
-            ival -= 0x8000;
-            tmp[i] = -1.0;
-        } else {
-            tmp[i] = 1.0;
-        }
-      
-        tmp[i] = (float)ival / (float)0x7FFF;
-#if 1
-        cout << tmp[i] << "->";
-#endif
+        tmp[i] = ival;
+        
         out.push_back(tmp);
     }
-#if 1
+#if DEBUG_ENCODE
         cout << "}\n";
 #endif
   }
@@ -290,13 +273,13 @@ State(long m, long p, long r, long d, long L)
   {
     // Idea verticies should be interleaved A0...A7 (slots), B0...B7 (slots) etc.
     EncodeState tmp(ea, vertexdata);
-    tmp.EncodeVector({-0.37234,-1.0,0.0,0.0}); // Bottom Left
+    tmp.EncodeVector({-32767,-32767,0,0}); // Bottom Left
     // Interleave all bottom lefts
-    tmp.EncodeVector({0.0,1.0,0.0,0.0}); // Top Middle
+    tmp.EncodeVector({0,32767,0,0}); // Top Middle
     // Interleave all top middle
-    tmp.EncodeVector({1.0,-1.0,0.0,0.0}); // Bottom Right
+    tmp.EncodeVector({32767,-32767,0,0}); // Bottom Right
     // Interleave all bottom rights
-    tmp.EncodeVector({1.0,0.0,1.0,1.0}); // Per triangle color -- change to per vertex
+    tmp.EncodeVector({32767,0,32767,32767}); // Per triangle color -- change to per vertex
     // Interleave all Colors
   
     // encrypt the trangle verticies
@@ -318,25 +301,26 @@ State(long m, long p, long r, long d, long L)
       for (int j = 0; j < a.size(); ++j) {
           if (a[j] != b[j]) {
              cout << j << " - Fail!!\n";
-             abort();
           }
       }
     }
   }
+  
+  height = 64;
+  width = 64;
+  pixelset_size = ea->size() / 4;
+  width_pixelset = width / pixelset_size;
   
   // Constants just clear color for now
   cout << "Input Constants\n";
   Vec<ZZX> constants;
   constants.SetLength(1);
   EncodeState tmp(ea, constants);
-  tmp.EncodeVector({0.0,0.0,0.0,1.0});
+  //for (int i = 0; i < pixelset_size) {
+    tmp.EncodeVector({0,0,0,32767});
+  //}
   ctxt_clearcolor.push_back(Ctxt(*publicKey));
   publicKey->Encrypt(ctxt_clearcolor[0], constants[0]);
-  
-  height = 64;
-  width = 64;
-  pixelset_size = ea->size() / 4;
-  width_pixelset = width / pixelset_size;
   
   for (long i = 0; i < height * width_pixelset; ++i) {
     ctxt_framebuffer.push_back(ctxt_clearcolor[0]);
@@ -407,8 +391,14 @@ void CopyToFramebuffer(State& state, SDL_Renderer *renderer)
         for (int _x = 0; _x < state.pixelset_size; ++_x) {
           const int x = (x_ * state.pixelset_size) + _x;
           
+          cout << _x << "-";
+          
           Vec4 color;
           GetColor(vectors[_x], color);
+          
+          cout << color[0] << "," << color[1] << "," << color[2];
+          
+          cout << "\n";
           
           SDL_SetRenderDrawColor(renderer, color[0],
                                            color[1],
