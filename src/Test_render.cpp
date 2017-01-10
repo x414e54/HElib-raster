@@ -139,7 +139,7 @@ struct EncodeState
         GF2XFromBytes(slots[slot++], (const unsigned char*)&ival, 2);
 #if 1
         int16_t dbg_ival = 0;
-        cout << fval << "=";
+        cout << fval << "->";
         cout << ival << "=";
         BytesFromGF2X((unsigned char*)&dbg_ival, slots[slot - 1], 2);
         cout << dbg_ival << ",";
@@ -188,7 +188,7 @@ void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& o
       
         tmp[i] *= ival / 0x7FFF;
 #if 1
-        cout << tmp[i] << "=";
+        cout << tmp[i] << "<-";
         cout << ival << ",";
 #endif
         out.push_back(tmp);
