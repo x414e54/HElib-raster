@@ -19,6 +19,7 @@
  * base-field/ring.
  */
 
+#include <array>
 #include <future>
 #include <thread>
 #include <cassert>
@@ -92,7 +93,7 @@ buildTransformMatrix(const EncryptedArray& ea)
   }
 }
 
-typedef float Vec4[4];
+typedef std::array<float, 4> Vec4;
 
 struct EncodeState
 {
@@ -137,7 +138,6 @@ struct EncodeState
   }
 };
 
-
 void GetColor(const Vec4& vertex, Vec4& out)
 {
   out[0] = vertex[0] * 255;
@@ -146,28 +146,31 @@ void GetColor(const Vec4& vertex, Vec4& out)
   out[3] = vertex[3] * 255;
 }
 
-void DecodeVector(shared_ptr<EncryptedArray>& ea, ZZX& encoded, int index, Vec4& out)
+void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& out)
 {
   const EncryptedArrayDerived<PA_GF2>& ea2 = ea->getDerived(PA_GF2());
   
   std::vector<GF2X> slots;
   ea2.decode(slots, encoded);
  
-  // Convert 16bit signed magnitude int to float (-1.0 to 1.0).
-  for (int i = 0; i < 4; ++i)
-  {
-      int16_t ival = 0;
-      BytesFromGF2X((unsigned char*)&ival, slots[(index * 4) + i], 2);
+  for (int j = 0; j < ea2.size() / 4; ++j) {
+    // Convert 16bit signed magnitude int to float (-1.0 to 1.0).
+    for (int i = 0; i < 4; ++i)
+    {
+        Vec4 tmp;
+        int16_t ival = 0;
+        BytesFromGF2X((unsigned char*)&ival, slots[(j * 4) + i], 2);
       
-      if (ival & 31) {
-          ival -= 0x8000;
-          out[i] = -1.0;
-      } else {
-          out[i] = 1.0;
-      }
+        if (ival & 31) {
+            ival -= 0x8000;
+            tmp[i] = -1.0;
+        } else {
+            tmp[i] = 1.0;
+        }
       
-      out[i] *= ival / 0x7FFF;
-      
+        tmp[i] *= ival / 0x7FFF;
+        out.push_back({0.0, 0.0, 0.0, 0.0});
+    }
   }
 }
 
@@ -257,12 +260,13 @@ State(long m, long p, long r, long d, long L)
       ZZX v1;
       secretKey->Decrypt(v1, ctxt_vertexdata[i]);
 
-      for (int i = 0; i < ea->size() / 4; ++i) {
-          Vec4 a;
-          Vec4 b;
-          DecodeVector(ea, v1, i, a);
-          DecodeVector(ea, vertexdata[i], i, a);
-          if (memcmp(a, b, sizeof(Vec4)) != 0) {
+      vector<Vec4> a;
+      vector<Vec4> b;
+      DecodeVectors(ea, v1, a);
+      DecodeVectors(ea, vertexdata[i], b);
+      assert(a.size() == b.size());
+      for (int j = 0; j < a.size(); ++j) {
+          if (a[j] != b[j]) {
              cout << "Fail!!\n";
           }
       }
@@ -344,13 +348,15 @@ void CopyToFramebuffer(State& state, SDL_Renderer *renderer)
         //cout << "PixelSet " << ps << "\n";
         state.secretKey->Decrypt(pixelset, state.ctxt_framebuffer[ps]);
           
+        vector<Vec4> vectors;
+        DecodeVectors(state.ea, pixelset, vectors);
+        
         // For each pixel in pixel "copy" to screen
         for (int _x = 0; _x < state.pixelset_size; ++_x) {
           const int x = (x_ * state.pixelset_size) + _x;
           
           Vec4 color;
-          DecodeVector(state.ea, pixelset, _x, color);
-          GetColor(color, color);
+          GetColor(vectors[_x], color);
           
           SDL_SetRenderDrawColor(renderer, color[0],
                                            color[1],
