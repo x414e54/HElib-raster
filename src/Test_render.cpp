@@ -134,6 +134,11 @@ struct EncodeState
         }
       
         GF2XFromBytes(slots[slot++], (const unsigned char*)&ival, 2);
+#if 1
+        int16_t dbg_ival = 0;
+        BytesFromGF2X((unsigned char*)&dbg_ival, slots[slot - 1], 2);
+        assert(dbg_ival == ival);
+#endif
     }
   }
 };
