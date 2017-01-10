@@ -369,8 +369,8 @@ void Render(State& state)
       // } End Vertex Shader
       
       Ctxt a = state.ctxt_vertexdata[(i * 4) + 0];
-      Ctxt b = state.ctxt_vertexdata[(i * 4) + 0];
-      Ctxt c = state.ctxt_vertexdata[(i * 4) + 0];
+      Ctxt b = state.ctxt_vertexdata[(i * 4) + 1];
+      Ctxt c = state.ctxt_vertexdata[(i * 4) + 2];
       
       // (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
       //      p1            p2            p1            p2
