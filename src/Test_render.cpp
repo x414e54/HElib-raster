@@ -120,7 +120,11 @@ struct EncodeState
         slots = std::vector<GF2X>(ea2.size(), GF2X::zero());
         ++index;
     }
-  
+
+#if 1
+    cout << "{";
+#endif
+
     // Convert float (-1.0 to 1.0) to 16bit signed magnitude int.
     for (int i = 0; i < 4; ++i)
     {
@@ -135,14 +139,15 @@ struct EncodeState
         GF2XFromBytes(slots[slot++], (const unsigned char*)&ival, 2);
 #if 1
         int16_t dbg_ival = 0;
-        cout << ival << "==";
-        cout << dbg_ival << ",";
+        cout << fval << "=";
+        cout << ival << "=";
         BytesFromGF2X((unsigned char*)&dbg_ival, slots[slot - 1], 2);
+        cout << dbg_ival << ",";
         assert(dbg_ival == ival);
 #endif
     }
 #if 1
-    cout << "\n";
+    cout << "}\n";
 #endif
   }
 };
@@ -163,14 +168,16 @@ void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& o
   ea2.decode(slots, encoded);
  
   for (int j = 0; j < ea2.size() / 4; ++j) {
+#if 1
+        cout << "{";
+#endif
+
     // Convert 16bit signed magnitude int to float (-1.0 to 1.0).
     for (int i = 0; i < 4; ++i)
     {
         Vec4 tmp;
         int16_t ival = 0;
         BytesFromGF2X((unsigned char*)&ival, slots[(j * 4) + i], 2);
-      
-        cout << ival << "\n";
         
         if (ival & 31) {
             ival -= 0x8000;
@@ -181,12 +188,13 @@ void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& o
       
         tmp[i] *= ival / 0x7FFF;
 #if 1
+        cout << tmp[i] << "=";
         cout << ival << ",";
 #endif
         out.push_back(tmp);
     }
 #if 1
-        cout << "\n";
+        cout << "}\n";
 #endif
   }
 }
