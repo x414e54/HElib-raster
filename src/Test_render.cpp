@@ -225,17 +225,21 @@ Vec<ZZX> vertexdata;
 std::vector<Ctxt> ctxt_vertexdata;
 
 std::vector<Ctxt> ctxt_framebuffer;
-std::vector<Ctxt> ctxt_clearcolor;
+std::vector<Ctxt> ctxt_constants;
 std::vector<Ctxt> ctxt_ylookup;
 std::vector<Ctxt> ctxt_xlookup;
 
-int vertex_stride;
-int triangle_stride;
-int num_triangles;
-int width;
-int width_pixelset;
-int pixelset_size;
-int height;
+size_t vertex_stride;
+size_t triangle_stride;
+size_t num_triangles;
+size_t width;
+size_t width_pixelset;
+size_t pixelset_size;
+size_t height;
+
+static const size_t CTXT_CLEARCOLOR = 0;
+static const size_t CTXT_EMPTY = 1;
+static const size_t CTXT_SLOT_1 = 2;
 
 shared_ptr<PlaintextMatrixBaseInterface> transform;
 
@@ -330,16 +334,27 @@ State(long m, long p, long r, long d, long L)
   {
     cout << "Input Constants\n";
     Vec<ZZX> constants;
-    constants.SetLength(1);
+    constants.SetLength(3);
     EncodeState tmp(ea, constants);
+    // CTXT_CLEARCOLOR
     for (int i = 0; i < pixelset_size; ++i) {
       tmp.EncodeVector({0,0,0,32767});
     }
-    ctxt_clearcolor.push_back(Ctxt(*publicKey));
-    publicKey->Encrypt(ctxt_clearcolor[0], constants[0]);
+    // CTXT_EMPTY
+    for (int i = 0; i < pixelset_size; ++i) {
+      tmp.EncodeVector({0,0,0,0});
+    }
+    // CTXT_SLOT_1 (first vertex slot index only, rest 0)
+    tmp.EncodeVector({1,1,1,1});
+    tmp.FinishSlots();
+    
+    for (int i = 0; i < constants.length(); ++i) {
+      ctxt_constants.push_back(Ctxt(*publicKey));
+      publicKey->Encrypt(ctxt_constants.back(), constants[i]);
+    }
   
     for (long i = 0; i < height * width_pixelset; ++i) {
-      ctxt_framebuffer.push_back(ctxt_clearcolor[0]);
+      ctxt_framebuffer.push_back(ctxt_constants[CTXT_CLEARCOLOR]);
     }
   }
   
@@ -387,14 +402,16 @@ State(long m, long p, long r, long d, long L)
 
 };
 
-#define DEBUG_TEST_DECRYPTIONS 0
+#define DEBUG_TEST_DECRYPTIONS 1
 void DuplicateSlots(State& state, const Ctxt& in, Ctxt& out)
 {
     const EncryptedArrayDerived<PA_GF2>& ea2 = state.ea->getDerived(PA_GF2());
-    out = state.ctxt_clearcolor[0];
-    for (int i = 0; i < ea2.size() / 4; ++i) {
-        out += in;
+    Ctxt tmp = in;
+    tmp *= state.ctxt_constants[state.CTXT_SLOT_1];
+    out = tmp;
+    for (int i = 1; i < ea2.size() / 4; ++i) {
         ea2.shift(out, 4);
+        out += in;
     }
 #if DEBUG_TEST_DECRYPTIONS
     // test decryption of duplicated slots
@@ -416,7 +433,7 @@ void DiscardPoint(State& state, Ctxt& selector,
  const Ctxt& ba, const Ctxt& cb, const Ctxt& ac,
  const Ctxt& a, const Ctxt& b, const Ctxt& c, int x_, int y)
 {
-    selector = state.ctxt_clearcolor[0]; // Change to 0
+    selector = state.ctxt_constants[state.CTXT_EMPTY]; // Change to 0
     Ctxt p = state.ctxt_ylookup[y];
     p += state.ctxt_xlookup[x_];
     
@@ -465,7 +482,7 @@ void Render(State& state)
     for (int y = 0; y < state.height; ++y) {
       for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
          const int ps = (y * state.width_pixelset) + x_;
-         state.ctxt_framebuffer[ps] = state.ctxt_clearcolor[0];
+         state.ctxt_framebuffer[ps] = state.ctxt_constants[state.CTXT_CLEARCOLOR];
       }
     }
     
@@ -473,7 +490,7 @@ void Render(State& state)
       // Begin Vertex Shader {
       //   mat_mul(*state.ea, state.ctxt_vertexdata[1], *transform);  // transform the triangles
 
-      Ctxt color_out = state.ctxt_vertexdata[(i * 4) + 3];
+      Ctxt vertex_color_out = state.ctxt_vertexdata[(i * 4) + 3];
       // } End Vertex Shader
       
       Ctxt a = state.ctxt_vertexdata[(i * 4) + 0];
@@ -502,11 +519,12 @@ void Render(State& state)
           const int ps = (y * state.width_pixelset) + x_;
           //cout << "PixelSet " << ps << "\n";
           
-          Ctxt color_in = color_out;
-          color_in *= discard;
+          Ctxt fragment_color_in = vertex_color_out;
+          DuplicateSlots(state, vertex_color_out, fragment_color_in);
+          //color_in *= discard;
           
           // Begin Fragment Shader {
-          state.ctxt_framebuffer[ps] += color_in;  // blend current pixel with new
+          state.ctxt_framebuffer[ps] += fragment_color_in;  // blend current pixel with new
           // } End Fragment Shader
         }
       }
