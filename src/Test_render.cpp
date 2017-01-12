@@ -519,9 +519,9 @@ void DiscardPoint(State& state, Ctxt& selector,
     }
 #endif
     
-    TestLineSign(state, a, p, ba, selector);
-    TestLineSign(state, b, p, cb, selector);
-    TestLineSign(state, c, p, ac, selector);
+    TestLineSign(state, a, ba, p, selector);
+    TestLineSign(state, b, cb, p, selector);
+    TestLineSign(state, c, ac, p, selector);
 }
 
 void Render(State& state)
