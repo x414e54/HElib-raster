@@ -387,6 +387,7 @@ State(long m, long p, long r, long d, long L)
 
 };
 
+#define DEBUG_TEST_DECRYPTIONS 0
 void DuplicateSlots(State& state, const Ctxt& in, Ctxt& out)
 {
     const EncryptedArrayDerived<PA_GF2>& ea2 = state.ea->getDerived(PA_GF2());
@@ -395,7 +396,7 @@ void DuplicateSlots(State& state, const Ctxt& in, Ctxt& out)
         out += in;
         ea2.shift(out, 4);
     }
-#if 1
+#if DEBUG_TEST_DECRYPTIONS
     // test decryption of duplicated slots
     cout << "Test slot duplication\n";
     ZZX out1;
@@ -419,7 +420,7 @@ void DiscardPoint(State& state, Ctxt& selector,
     Ctxt p = state.ctxt_ylookup[y];
     p += state.ctxt_xlookup[x_];
     
-#if 1
+#if DEBUG_TEST_DECRYPTIONS
     // test decryption of the x y co-ord using lookup table
     cout << "Test lookup table\n";
     ZZX p1;
