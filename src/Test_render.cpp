@@ -116,6 +116,11 @@ struct EncodeState
     
     slot = 0;
     slots = std::vector<GF2X>(ea2.size(), GF2X::zero());
+
+#if DEBUG_ENCODE
+    cout << "Finishing Slot-Set # " << index << "\n";
+#endif
+
     ++index;
   }
   
@@ -123,12 +128,12 @@ struct EncodeState
   {
     const EncryptedArrayDerived<PA_GF2>& ea2 = ea->getDerived(PA_GF2());
     
-    if (slot + 4 >= ea2.size()) {
+    if (slot + 4 > ea2.size()) {
         FinishSlots();
     }
 
 #if DEBUG_ENCODE
-    cout << "{";
+    cout << index << "# {";
     std::array<int16_t, 4> dbg_ivals;
 #endif
 
