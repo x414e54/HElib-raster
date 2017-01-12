@@ -402,7 +402,7 @@ State(long m, long p, long r, long d, long L)
 
 };
 
-#define DEBUG_TEST_DECRYPTIONS 1
+#define DEBUG_TEST_DECRYPTIONS 0
 void DuplicateSlots(State& state, const Ctxt& in, Ctxt& out)
 {
     const EncryptedArrayDerived<PA_GF2>& ea2 = state.ea->getDerived(PA_GF2());
