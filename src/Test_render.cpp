@@ -139,7 +139,18 @@ struct EncodeState
 
     for (int i = 0; i < 4; ++i)
     {
-        int16_t ival = vec[i];
+        int16_t ival = vec[i];      
+        
+        GF2X g;
+        GF2X exp;
+        int16_t ig = 3;
+        GF2XFromBytes(g, (unsigned char*)&ig, 2);
+        exp = g;
+
+        for (int i = 1; i < ival; ++i) {
+            exp *= g;
+        }
+        
         GF2XFromBytes(slots[slot++], (const unsigned char*)&ival, 2);
 #if DEBUG_ENCODE
         int16_t dbg_ival = 0;
@@ -212,6 +223,21 @@ void DecodeVectors(shared_ptr<EncryptedArray>& ea, ZZX& encoded, vector<Vec4>& o
         cout << "}\n";
 #endif
   }
+}
+
+Ctxt& invert(Ctxt& data)
+{
+  // compute X -> X^{254} on i'th ctxt
+  Ctxt tmp1(data);           // tmp1   = data[i] = X
+  tmp1.frobeniusAutomorph(1);   // tmp1   = X^2   after Z -> Z^2
+  data.multiplyBy(tmp1);     // data[i]= X^3
+  Ctxt tmp2(data);           // tmp2   = X^3
+  tmp2.frobeniusAutomorph(2);   // tmp2   = X^12  after Z -> Z^4
+  tmp1.multiplyBy(tmp2);        // tmp1   = X^14
+  data.multiplyBy(tmp2);     // data[i]= X^15
+  data.frobeniusAutomorph(4);// data[i]= X^240 after Z -> Z^16
+  data.multiplyBy(tmp1);     // data[i]= X^254
+  return data;
 }
 
 struct State
@@ -440,7 +466,7 @@ void TestLineSign(State& state, const Ctxt& a, const Ctxt& ba, const Ctxt& p,
 {
     Ctxt p_tmp = p;
     Ctxt sign = ba;
-    p_tmp -= a; // p.x - a.x, p.y - a.y;
+    p_tmp *= a; // p.x - a.x, p.y - a.y;
     // swizzle p.x - a.x, p.y - a.y -> p.y - a.y, p.X - a.x
     Ctxt sizzle = p_tmp;
     p_tmp *= state.ctxt_constants[state.CTXT_SLOT_INDEX_0];
@@ -558,11 +584,11 @@ void Render(State& state)
       
       // Contains paralized data for ea.size() / 4 triangles
       Ctxt ba = b; // b
-      ba -= a; // b.x - a.x, b.y - a.y, b.z - a.z;
+      ba *= invert(a); // b.x - a.x, b.y - a.y, b.z - a.z;
       Ctxt cb = c; // b
-      cb -= b; // c.x - b.x, c.y - b.y, c.z - b.z;
+      cb *= invert(b); // c.x - b.x, c.y - b.y, c.z - b.z;
       Ctxt ac = a; // b
-      ac -= c; // a.x - c.x, a.y - c.y, a.z - c.z;
+      ac *= invert(c); // a.x - c.x, a.y - c.y, a.z - c.z;
       
       // for each triangle
       // for (int t = 0; t < state.ea->size / 4; ++y) {
@@ -669,8 +695,8 @@ int main(int argc, char *argv[])
   long k = atoi(argmap["k"]);
  
   setTimersOn();
-  long m = FindM(k, 5, 3, 2, 16, 4, 771, true);
-  State state(m, 2, 1, 16, 5);
+  long m = FindM(k, 10, 3, 2, 16, 4, 771, true);
+  State state(m, 2, 1, 16, 10);
 
   int done;
   SDL_Window *window;
