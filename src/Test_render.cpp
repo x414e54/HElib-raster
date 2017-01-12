@@ -112,6 +112,8 @@ struct EncodeState
 
   void FinishSlots()
   {
+    const EncryptedArrayDerived<PA_GF2>& ea2 = ea->getDerived(PA_GF2());
+    
     slot = 0;
     slots = std::vector<GF2X>(ea2.size(), GF2X::zero());
     ++index;
@@ -121,7 +123,7 @@ struct EncodeState
   {
     const EncryptedArrayDerived<PA_GF2>& ea2 = ea->getDerived(PA_GF2());
     
-    if (slot + 4 >= ea2.size) {
+    if (slot + 4 >= ea2.size()) {
         FinishSlots();
     }
 
@@ -219,6 +221,8 @@ std::vector<Ctxt> ctxt_vertexdata;
 
 std::vector<Ctxt> ctxt_framebuffer;
 std::vector<Ctxt> ctxt_clearcolor;
+std::vector<Ctxt> ctxt_ylookup;
+std::vector<Ctxt> ctxt_xlookup;
 
 int vertex_stride;
 int triangle_stride;
@@ -290,7 +294,7 @@ State(long m, long p, long r, long d, long L)
     // encrypt the trangle verticies
     for (int i = 0; i < vertexdata.length(); ++i) {
       ctxt_vertexdata.push_back(Ctxt(*publicKey));
-      publicKey->Encrypt(ctxt_vertexdata[i], vertexdata[i]);
+      publicKey->Encrypt(ctxt_vertexdata.back(), vertexdata[i]);
     }
    
     // test decryption of the trangle verticies
@@ -317,18 +321,57 @@ State(long m, long p, long r, long d, long L)
   width_pixelset = width / pixelset_size;
   
   // Constants just clear color for now
-  cout << "Input Constants\n";
-  Vec<ZZX> constants;
-  constants.SetLength(1);
-  EncodeState tmp(ea, constants);
-  for (int i = 0; i < pixelset_size) {
-    tmp.EncodeVector({0,0,0,32767});
-  }
-  ctxt_clearcolor.push_back(Ctxt(*publicKey));
-  publicKey->Encrypt(ctxt_clearcolor[0], constants[0]);
+  // Convert to ctxt_constants
+  {
+    cout << "Input Constants\n";
+    Vec<ZZX> constants;
+    constants.SetLength(1);
+    EncodeState tmp(ea, constants);
+    for (int i = 0; i < pixelset_size; ++i) {
+      tmp.EncodeVector({0,0,0,32767});
+    }
+    ctxt_clearcolor.push_back(Ctxt(*publicKey));
+    publicKey->Encrypt(ctxt_clearcolor[0], constants[0]);
   
-  for (long i = 0; i < height * width_pixelset; ++i) {
-    ctxt_framebuffer.push_back(ctxt_clearcolor[0]);
+    for (long i = 0; i < height * width_pixelset; ++i) {
+      ctxt_framebuffer.push_back(ctxt_clearcolor[0]);
+    }
+  }
+  
+  // Create x/y Lookup Table - find a better way to combine these
+  // Do constants need to be encrypted?
+  int16_t ps_size = pixelset_size;
+  {
+    cout << "Y LUT\n";
+    Vec<ZZX> ylookup;
+    for (int16_t y = 0; y < height; ++y) {
+      EncodeState tmp(ea, ylookup);
+      for (int16_t _x = 0; _x < ps_size; ++_x) {
+        tmp.EncodeVector({0, y, 0, 0});
+      }
+      tmp.FinishSlots();
+    }
+    for (int i = 0; i < ylookup.length(); ++i) {
+      ctxt_ylookup.push_back(Ctxt(*publicKey));
+      publicKey->Encrypt(ctxt_ylookup.back(), ylookup[i]);
+    }
+  }
+  
+  {
+    cout << "X LUT\n";
+    Vec<ZZX> xlookup;
+    for (int16_t x_ = 0; x_ < width_pixelset; ++x_) {
+      EncodeState tmp(ea, xlookup);
+      for (int16_t _x = 0; _x < ps_size; ++_x) {
+        int16_t x = (x_ * ps_size) + _x;
+        tmp.EncodeVector({x, 0, 0, 0});
+      }
+      tmp.FinishSlots();
+    }
+    for (int i = 0; i < xlookup.length(); ++i) {
+      ctxt_xlookup.push_back(Ctxt(*publicKey));
+      publicKey->Encrypt(ctxt_xlookup.back(), xlookup[i]);
+    }
   }
     
   // vertex shader rotate matrix
@@ -337,16 +380,37 @@ State(long m, long p, long r, long d, long L)
 
 };
 
-Ctxt DiscardPoint(Ctxt p, Ctxt ba, Ctxt cb, Ctxt, ac)
+void DuplicateSlots(State& state, const Ctxt& in, Ctxt& out)
 {
-      /*Ctxt p2 = p; // p
-      p -= tmp; // p.X - a.x, p.y - a.y, p.z - a.z;
-      //swizzle;
-      //
-      state.ea->rotate(p2, long k);
+    const EncryptedArrayDerived<PA_GF2>& ea2 = state.ea->getDerived(PA_GF2());
+    out = state.ctxt_clearcolor[0];
+    for (int i = 0; i < ea2.size() / 4; ++i) {
+        out += in;
+        ea2.shift(out, 4);
+    }
+}
+
+void DiscardPoint(State& state, Ctxt& selector,
+ const Ctxt& ba, const Ctxt& cb, const Ctxt& ac,
+ const Ctxt& a, const Ctxt& b, const Ctxt& c, int x_, int y)
+{
+    selector = state.ctxt_clearcolor[0]; // Change to 0
+    Ctxt p = state.ctxt_ylookup[y];
+    p *= state.ctxt_xlookup[x_];
+    
+    // For now duplicate slot 0 to all slots
+    // Later on when there are more than 8 triangles replan what todo here.
+    
+    // for ba, cb, and ac
+    /*DuplicateSlots(state, ba, ba_tmp);
+    DuplicateSlots(state, ba, a_tmp);
+    tmp -= a_tmp; // p.X - a.x, p.y - a.y, p.z - a.z;
+    //swizzle;
+    //
+    state.ea->rotate(p2, long k);
       
-      tmp = p1;
-      tmp *= p2; // (b.x - a.x) * (p.y - a.y), (b.y - a.y) * (p.x - a.x)...*/
+    ba_tmp *= p2; // (b.x - a.x) * (p.y - a.y), (b.y - a.y) * (p.x - a.x)...
+    selector *= tmp;*/
 }
 
 void Render(State& state)
@@ -377,6 +441,7 @@ void Render(State& state)
       
       // a-b, b-c, c-a
       
+      // Contains paralized data for ea.size() / 4 triangles
       Ctxt ba = b; // b
       ba -= a; // b.x - a.x, b.y - a.y, b.z - a.z;
       Ctxt cb = c; // b
@@ -387,22 +452,15 @@ void Render(State& state)
       // For each pixel fill/rasterize triangle
       for (int y = 0; y < state.height; ++y) {
         for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
-          // Needs to be more efficient
-          vector<ZZX> points;
-          EncodeState tmp(ea, points);
-          for (int _x = 0; _x < state.pixelset_size) {
-              tmp.EncodeVector({(x_ * state.pixelset_size) + _x, y, 0, 0});
-          }
-          Ctxt p = Ctxt(*state.publicKey);
-          publicKey->Encrypt(p, points[0]);
-          //
-          
-          Ctxt discard = DiscardPoint(p, ba, cb, ac);
+          Ctxt discard(*state.publicKey);
+          DiscardPoint(state, discard, ba, cb, ac, a, b, c, x_, y);
         
           const int ps = (y * state.width_pixelset) + x_;
           //cout << "PixelSet " << ps << "\n";
           
-          Ctxt color_in = color_out * discard;
+          Ctxt color_in = color_out;
+          color_in *= discard;
+          
           // Begin Fragment Shader {
           state.ctxt_framebuffer[ps] += color_in;  // blend current pixel with new
           // } End Fragment Shader
