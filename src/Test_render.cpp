@@ -344,6 +344,8 @@ State(long m, long p, long r, long d, long L)
   {
     cout << "Y LUT\n";
     Vec<ZZX> ylookup;
+    ylookup.SetLength(height);
+    
     EncodeState tmp(ea, ylookup);
     for (int16_t y = 0; y < height; ++y) {
       for (int16_t _x = 0; _x < ps_size; ++_x) {
@@ -360,6 +362,8 @@ State(long m, long p, long r, long d, long L)
   {
     cout << "X LUT\n";
     Vec<ZZX> xlookup;
+    xlookup.SetLength(width_pixelset);
+    
     EncodeState tmp(ea, xlookup);
     for (int16_t x_ = 0; x_ < width_pixelset; ++x_) {
       for (int16_t _x = 0; _x < ps_size; ++_x) {
