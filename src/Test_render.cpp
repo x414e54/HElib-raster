@@ -240,7 +240,7 @@ size_t height;
 static const size_t CTXT_CLEARCOLOR = 0;
 static const size_t CTXT_EMPTY = 1;
 static const size_t CTXT_SLOT_0 = 2;
-static const size_t CTXT_SLOT_INDEX_0 = 20;
+static const size_t CTXT_SLOT_INDEX_0 = 3;
 
 shared_ptr<PlaintextMatrixBaseInterface> transform;
 
