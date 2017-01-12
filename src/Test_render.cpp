@@ -351,7 +351,6 @@ State(long m, long p, long r, long d, long L)
       for (int16_t _x = 0; _x < ps_size; ++_x) {
         tmp.EncodeVector({0, y, 0, 0});
       }
-      tmp.FinishSlots();
     }
     for (int i = 0; i < ylookup.length(); ++i) {
       ctxt_ylookup.push_back(Ctxt(*publicKey));
@@ -370,7 +369,6 @@ State(long m, long p, long r, long d, long L)
         int16_t x = (x_ * ps_size) + _x;
         tmp.EncodeVector({x, 0, 0, 0});
       }
-      tmp.FinishSlots();
     }
     for (int i = 0; i < xlookup.length(); ++i) {
       ctxt_xlookup.push_back(Ctxt(*publicKey));
