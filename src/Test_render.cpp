@@ -239,7 +239,8 @@ size_t height;
 
 static const size_t CTXT_CLEARCOLOR = 0;
 static const size_t CTXT_EMPTY = 1;
-static const size_t CTXT_SLOT_1 = 2;
+static const size_t CTXT_SLOT_0 = 2;
+static const size_t CTXT_SLOT_INDEX_0 = 20;
 
 shared_ptr<PlaintextMatrixBaseInterface> transform;
 
@@ -344,9 +345,14 @@ State(long m, long p, long r, long d, long L)
     for (int i = 0; i < pixelset_size; ++i) {
       tmp.EncodeVector({0,0,0,0});
     }
-    // CTXT_SLOT_1 (first vertex slot index only, rest 0)
+    // CTXT_SLOT_0 (first vertex slot index only, rest 0)
     tmp.EncodeVector({1,1,1,1});
     tmp.FinishSlots();
+    
+    // CTXT_SLOT_INDEX_0
+    for (int i = 0; i < pixelset_size; ++i) {
+      tmp.EncodeVector({1,0,0,0});
+    }
     
     for (int i = 0; i < constants.length(); ++i) {
       ctxt_constants.push_back(Ctxt(*publicKey));
@@ -407,7 +413,7 @@ void DuplicateSlots(State& state, const Ctxt& in, Ctxt& out)
 {
     const EncryptedArrayDerived<PA_GF2>& ea2 = state.ea->getDerived(PA_GF2());
     Ctxt tmp = in;
-    tmp *= state.ctxt_constants[state.CTXT_SLOT_1];
+    tmp *= state.ctxt_constants[state.CTXT_SLOT_0];
     out = tmp;
     for (int i = 1; i < ea2.size() / 4; ++i) {
         ea2.shift(out, 4);
@@ -426,6 +432,60 @@ void DuplicateSlots(State& state, const Ctxt& in, Ctxt& out)
             cout << j << " - Fail!!\n";
         }
     }
+#endif
+}
+
+void TestLineSign(State& state, const Ctxt& a, const Ctxt& ba, const Ctxt& p,
+                  const Ctxt& selector)
+{
+    Ctxt p_tmp = p;
+    Ctxt sign = ba;
+    p_tmp -= a; // p.x - a.x, p.y - a.y;
+    // swizzle p.x - a.x, p.y - a.y -> p.y - a.y, p.X - a.x
+    Ctxt sizzle = p_tmp;
+    p_tmp *= state.ctxt_constants[state.CTXT_SLOT_INDEX_0];
+    state.ea->shift(p_tmp, 1);
+    state.ea->shift(sizzle, -1);
+    sizzle *= state.ctxt_constants[state.CTXT_SLOT_INDEX_0];
+    p_tmp += sizzle;
+    // end swizzle
+      
+    sign *= p_tmp; // (b.x - a.x) * (p.y - a.y), (b.y - a.y) * (p.x - a.x)...
+    
+#if 1
+    // test decryption of the triangle intersection test
+    cout << "Test Inside triangle \n";
+    ZZX a1;
+    state.secretKey->Decrypt(a1, a);
+    ZZX ba1;
+    state.secretKey->Decrypt(ba1, ba);
+    ZZX p1;
+    state.secretKey->Decrypt(p1, p);
+    ZZX p_tmp1;
+    state.secretKey->Decrypt(p_tmp1, p_tmp);
+    ZZX sign1;
+    state.secretKey->Decrypt(sign1, sign);
+
+    vector<Vec4> a2;
+    DecodeVectors(state.ea, a1, a2);
+    vector<Vec4> ba2;
+    DecodeVectors(state.ea, ba1, ba2);
+    vector<Vec4> p2;
+    DecodeVectors(state.ea, p1, p2);
+    vector<Vec4> p_tmp2;
+    DecodeVectors(state.ea, p_tmp1, p_tmp2);
+    vector<Vec4> sign2;
+    DecodeVectors(state.ea, sign1, sign2);
+    
+    uint16_t p_x = p2[0][1] - a2[0][1];
+    uint16_t p_y = p2[0][0] - a2[0][0];
+    // loop
+    assert(p_tmp2[0][0] == p_x && p_tmp2[0][1] == p_y);
+    
+    uint16_t sign_x = ba2[0][0] * p_x;
+    uint16_t sign_y = ba2[0][1] * p_y;
+    // loop
+    assert(sign2[0][0] == sign_x && sign2[0][1] == sign_y);
 #endif
 }
 
@@ -459,19 +519,9 @@ void DiscardPoint(State& state, Ctxt& selector,
     }
 #endif
     
-    // For now duplicate slot 0 to all slots
-    // Later on when there are more than 8 triangles replan what todo here.
-    
-    // for ba, cb, and ac
-    /*DuplicateSlots(state, ba, ba_tmp);
-    DuplicateSlots(state, ba, a_tmp);
-    tmp -= a_tmp; // p.X - a.x, p.y - a.y, p.z - a.z;
-    //swizzle;
-    //
-    state.ea->rotate(p2, long k);
-      
-    ba_tmp *= p2; // (b.x - a.x) * (p.y - a.y), (b.y - a.y) * (p.x - a.x)...
-    selector *= tmp;*/
+    TestLineSign(state, a, p, ba, selector);
+    TestLineSign(state, b, p, cb, selector);
+    TestLineSign(state, c, p, ac, selector);
 }
 
 void Render(State& state)
@@ -486,7 +536,7 @@ void Render(State& state)
       }
     }
     
-    for (int i = 0; i < state.num_triangles; ++i) {
+    for (int i = 0; i < state.num_triangles; ++i) { // This should be per triangleset
       // Begin Vertex Shader {
       //   mat_mul(*state.ea, state.ctxt_vertexdata[1], *transform);  // transform the triangles
 
@@ -510,18 +560,35 @@ void Render(State& state)
       Ctxt ac = a; // b
       ac -= c; // a.x - c.x, a.y - c.y, a.z - c.z;
       
+      // for each triangle
+      // for (int t = 0; t < state.ea->size / 4; ++y) {
+        // For now duplicate slot 0 to all slots
+        // Replan what todo here.
+        Ctxt a_tmp = a;
+        DuplicateSlots(state, a, a_tmp);
+        Ctxt b_tmp = b;
+        DuplicateSlots(state, b, b_tmp);
+        Ctxt c_tmp = c;
+        DuplicateSlots(state, c, c_tmp);
+        Ctxt ba_tmp = ba;
+        DuplicateSlots(state, ba, ba_tmp);
+        Ctxt cb_tmp = cb;
+        DuplicateSlots(state, cb, cb_tmp);
+        Ctxt ac_tmp = ac;
+        DuplicateSlots(state, ac, ac_tmp);
+    
       // For each pixel fill/rasterize triangle
       for (int y = 0; y < state.height; ++y) {
         for (int x_ = 0; x_ < state.width_pixelset; ++x_) {
           Ctxt discard(*state.publicKey);
-          DiscardPoint(state, discard, ba, cb, ac, a, b, c, x_, y);
+          DiscardPoint(state, discard, ba_tmp, cb_tmp, ac_tmp, a_tmp, b_tmp, c_tmp, x_, y);
         
           const int ps = (y * state.width_pixelset) + x_;
           //cout << "PixelSet " << ps << "\n";
           
           Ctxt fragment_color_in = vertex_color_out;
           DuplicateSlots(state, vertex_color_out, fragment_color_in);
-          //color_in *= discard;
+          fragment_color_in = discard; //*= discard;
           
           // Begin Fragment Shader {
           state.ctxt_framebuffer[ps] += fragment_color_in;  // blend current pixel with new
@@ -598,8 +665,8 @@ int main(int argc, char *argv[])
   long k = atoi(argmap["k"]);
  
   setTimersOn();
-  long m = FindM(k, 4, 3, 2, 16, 4, 771, true);
-  State state(m, 2, 1, 16, 4);
+  long m = FindM(k, 5, 3, 2, 16, 4, 771, true);
+  State state(m, 2, 1, 16, 5);
 
   int done;
   SDL_Window *window;
