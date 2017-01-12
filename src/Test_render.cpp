@@ -417,7 +417,7 @@ void DiscardPoint(State& state, Ctxt& selector,
 {
     selector = state.ctxt_clearcolor[0]; // Change to 0
     Ctxt p = state.ctxt_ylookup[y];
-    p *= state.ctxt_xlookup[x_];
+    p += state.ctxt_xlookup[x_];
     
 #if 1
     // test decryption of the x y co-ord using lookup table
