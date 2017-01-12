@@ -163,9 +163,9 @@ struct EncodeState
     {
         int16_t dbg_ival = 0;
         BytesFromGF2X((unsigned char*)&dbg_ival, tmp[i], 2);
-        assert(dbg_ival == dbg_ivals[i]);
         cout << dbg_ival << "=";
         cout << dbg_ivals[i] << ",";
+        assert(dbg_ival == dbg_ivals[i]);
     }
     cout << "\n";
 #endif
