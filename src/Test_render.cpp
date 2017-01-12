@@ -397,6 +397,7 @@ void DuplicateSlots(State& state, const Ctxt& in, Ctxt& out)
     }
 #if 1
     // test decryption of duplicated slots
+    cout << "Test slot duplication\n";
     ZZX out1;
     state.secretKey->Decrypt(out1, out);
 
@@ -420,6 +421,7 @@ void DiscardPoint(State& state, Ctxt& selector,
     
 #if 1
     // test decryption of the x y co-ord using lookup table
+    cout << "Test lookup table\n";
     ZZX p1;
     state.secretKey->Decrypt(p1, p);
 
