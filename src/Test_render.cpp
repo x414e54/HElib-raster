@@ -480,12 +480,16 @@ void TestLineSign(State& state, const Ctxt& a, const Ctxt& ba, const Ctxt& p,
     uint16_t p_x = p2[0][1] - a2[0][1];
     uint16_t p_y = p2[0][0] - a2[0][0];
     // loop
-    assert(p_tmp2[0][0] == p_x && p_tmp2[0][1] == p_y);
+    for (int i = 0; i < state.pixelset_size; ++i) {
+        assert(p_tmp2[i][0] == p_x && p_tmp2[i][1] == p_y);
+    }
     
     uint16_t sign_x = ba2[0][0] * p_x;
     uint16_t sign_y = ba2[0][1] * p_y;
     // loop
-    assert(sign2[0][0] == sign_x && sign2[0][1] == sign_y);
+    for (int i = 0; i < state.pixelset_size; ++i) {
+        assert(sign2[i][0] == sign_x && sign2[i][1] == sign_y);
+    }
 #endif
 }
 
