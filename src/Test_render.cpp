@@ -398,6 +398,27 @@ void DiscardPoint(State& state, Ctxt& selector,
     Ctxt p = state.ctxt_ylookup[y];
     p *= state.ctxt_xlookup[x_];
     
+#if 1
+    // test decryption of the x y co-ord using lookup table
+    ZZX p1;
+    state.secretKey->Decrypt(p1, p);
+
+    vector<Vec4> p2;
+    vector<Vec4> p3;
+    DecodeVectors(state.ea, p1, p2);
+    for (int16_t _x = 0; _x < state.pixelset_size; ++_x) {
+        int16_t x = (x_ * state.pixelset_size) + _x;
+        int16_t y1 = y;
+        p3.push_back({x, y1, 0, 0});
+    }
+    assert(p2.size() == p3.size());
+    for (int j = 0; j < p2.size(); ++j) {
+        if (p2[j] != p3[j]) {
+            cout << j << " - Fail!!\n";
+        }
+    }
+#endif
+    
     // For now duplicate slot 0 to all slots
     // Later on when there are more than 8 triangles replan what todo here.
     
