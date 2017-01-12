@@ -335,7 +335,7 @@ State(long m, long p, long r, long d, long L)
   {
     cout << "Input Constants\n";
     Vec<ZZX> constants;
-    constants.SetLength(3);
+    constants.SetLength(4);
     EncodeState tmp(ea, constants);
     // CTXT_CLEARCOLOR
     for (int i = 0; i < pixelset_size; ++i) {
