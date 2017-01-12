@@ -388,6 +388,19 @@ void DuplicateSlots(State& state, const Ctxt& in, Ctxt& out)
         out += in;
         ea2.shift(out, 4);
     }
+#if 1
+    // test decryption of duplicated slots
+    ZZX out1;
+    state.secretKey->Decrypt(out1, out);
+
+    vector<Vec4> out2;
+    DecodeVectors(state.ea, out1, out2);
+    for (int j = 0; j < out2.size(); ++j) {
+        if (out2[0] != out2[j]) {
+            cout << j << " - Fail!!\n";
+        }
+    }
+#endif
 }
 
 void DiscardPoint(State& state, Ctxt& selector,
