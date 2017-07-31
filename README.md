@@ -1,3 +1,10 @@
+Encrypted Rasterizer
+====
+Requires SDL:
+
+Compile helib and examples as normal then run:
+Test_render
+
 HElib
 =====
 
