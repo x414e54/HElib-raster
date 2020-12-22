@@ -1,3 +1,6 @@
+// Copyright (C) Anthony Bills.
+// Test_matmul.cpp was used as a template, code from there is IBM the rest is me!
+
 /* Copyright (C) 2012,2013 IBM Corp.
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
